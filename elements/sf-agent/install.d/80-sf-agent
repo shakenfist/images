@@ -1,0 +1,25 @@
+#!/bin/bash
+
+python3 -m virtualenv /opt/shakenfist
+/opt/shakenfist/bin/pip install shakenfist-agent
+
+cat - > /etc/systemd/system/sf-agent.service << EOF
+[Unit]
+Description=Shaken Fist minimal cloud in guest agent
+After=network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+ExecStart=/bin/sh -c '/opt/shakenfist/bin/sf-agent daemon run'
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable sf-agent

@@ -1,2 +1,1 @@
-# images
-Build tooling for images intended for Shaken Fist
+Build tooling for images intended for Shaken Fist.

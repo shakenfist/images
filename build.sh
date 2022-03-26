@@ -3,7 +3,8 @@
 # Ensure we're up to date, and have diskimage-builder installed.
 apt-get update
 apt-get dist-upgrade -y
-apt-get install -y git python3 python3-dev python3-pip python3-wheel
+apt-get install -y git python3 python3-dev python3-pip python3-wheel rsync
+pip3 install bindep
 
 # We have to install diskimage-builder this way because the Ubuntu dependancies
 # are wrong for the packaged version.
@@ -16,45 +17,86 @@ else
 fi
 
 cd diskimage-builder
-apt-get install -y `bindep --list_all newline` kpartx
+apt-get install -y `bindep --list_all newline`
 python3 setup.py develop
 cd ..
 
-export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
-
 # Build images
-build_args="cloud-init cloud-init-datasources sf-agent vm"
-export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
+rm -rf ../images-output
+datestamp=$(date +%Y%m%d)
 
-echo
-echo "Building Ubuntu 18.04"
-echo
-DIB_RELEASE=bionic disk-image-create ubuntu ${build_args} -o ubuntu-18.04-sfagent.qcow2
+function build () {
+    # $1: output filename
+    # $2: OS release name (bionic, focal, etc)
+    # $3: python version (2 or 3)
+    # $4: distro specific args
 
-echo
-echo "Building Ubuntu 20.04"
-echo
-DIB_RELEASE=focal disk-image-create ubuntu ${build_args} -o ubuntu-20.04-sfagent.qcow2
+    echo
+    echo "Building $1"
+    echo
 
-echo
-echo "Building Debian 10"
-echo
-DIB_RELEASE=buster disk-image-create debian debian-systemd ${build_args} -o debian-10-sfagent.qcow2
+    export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
+    export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
+    export DIB_APT_MINIMAL_CREATE_INTERFACES=0
+    export build_args="cloud-init cloud-init-datasources sf-agent vm"
 
-echo
-echo "Building Debian 11"
-echo
-DIB_RELEASE=bullseye disk-image-create debian debian-systemd ${build_args} -o debian-11-sfagent.qcow2
+    cwd=$(pwd)
+    output=$1
+    outdir=$(dirname ${output})
+    mkdir -p ${outdir}
 
-echo
-echo "Building CentOS 7"
-echo
-DIB_RELEASE=7 disk-image-create centos ${build_args} -o centos-7-sfagent.qcow2
+    echo "${3}"
+    if [ "${3}" == "-" ]; then
+        unset DIB_PYTHON_VERSION
+    else
+        export DIB_PYTHON_VERSION=$3
+    fi
 
-echo
-echo "Building CentOS 8"
-echo
-DIB_RELEASE=8-stream disk-image-create centos ${build_args} -o centos-8-stream-sfagent.qcow2
+    set -x
+    DIB_RELEASE=$2 disk-image-create $4 ${build_args} -o temp.qcow2 | tee ${output}.log
+
+    # Why is it so hard to detect a DIB failure?
+    if [ $? -gt 0 ]; then
+        echo "BUILD FAILED."
+        exit 1
+    fi
+
+    if [ $(grep -c "Build completed successfully" ${output}.log) -lt 1 ]; then
+        echo "BUILD FAILED"
+        exit 1
+    fi
+    set +x
+
+    mv temp.qcow2 ${output}
+    rm -rf tmp*
+
+    cd ${outdir}
+    rm -f latest
+    ln -s $(basename ${output}) latest.qcow2
+    cd ${cwd}
+}
+
+output="../images-output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
+build ${output} bionic "-" ubuntu
+
+output="../images-output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
+build ${output} focal 3 ubuntu
+
+output="../images-output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
+build ${output} buster 3 "debian debian-systemd"
+
+output="../images-output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
+build ${output} bullseye 3 "debian debian-systemd"
+
+output="../images-output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
+build ${output} 7 "-" centos
+
+output="../images-output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
+build ${output} 8-stream "-" centos
+
+# Copy images to the repository
+cd ../images-output
+rsync -rcavp --links --progress . images.shakenfist.com:images.shakenfist.com/
 
 # And done
 echo

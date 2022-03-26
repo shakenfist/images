@@ -1,5 +1,4 @@
 #!/bin/bash
-
 python3 -m virtualenv /opt/shakenfist
 /opt/shakenfist/bin/pip install shakenfist-agent
 

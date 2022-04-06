@@ -1,5 +1,16 @@
 #!/bin/bash -e
 
+images="$1"
+if [ "$images" == "" ]; then
+    images="ubuntu:18.04 ubuntu:20.04 debian:10 debian:11 centos:7 centos:8-stream"
+    do_not_push=0
+else
+    do_not_push=1
+fi
+
+echo "I will build the following images: ${images}"
+echo
+
 # Ensure we're up to date, and have diskimage-builder installed.
 apt-get update
 apt-get dist-upgrade -y
@@ -55,6 +66,12 @@ function build () {
     set -x
     DIB_RELEASE=$2 disk-image-create $4 ${build_args} -o temp.qcow2 | tee ${output}.log
 
+    # If we detected a checksum failure, clear the cache. This seems common with
+    # upstream Ubuntu images for some reason.
+    if [ $(grep -c "computed checksum did NOT match" ${output}.log) -gt 0 ]; then
+        rm -rf ~/.cache/image-create
+    fi
+
     # Why is it so hard to detect a DIB failure?
     if [ $? -gt 0 ]; then
         echo "BUILD FAILED."
@@ -76,27 +93,43 @@ function build () {
     cd ${cwd}
 }
 
-output="../images-output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
-build ${output} bionic "-" ubuntu
+if [ $(echo $images | grep -c "ubuntu:18.04") -gt 0 ]; then
+    output="../images-output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
+    build ${output} bionic "-" ubuntu
+fi
 
-output="../images-output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
-build ${output} focal 3 ubuntu
+if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
+    output="../images-output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
+    build ${output} focal 3 ubuntu
+fi
 
-output="../images-output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
-build ${output} buster 3 "debian debian-systemd"
+if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then
+    output="../images-output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
+    build ${output} buster 3 "debian debian-systemd"
+fi
 
-output="../images-output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
-build ${output} bullseye 3 "debian debian-systemd"
+if [ $(echo $images | grep -c "debian:11") -gt 0 ]; then
+    output="../images-output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "debian debian-systemd"
+fi
 
-output="../images-output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
-build ${output} 7 "-" centos
+if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then
+    output="../images-output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
+    build ${output} 7 "-" centos
+fi
 
-output="../images-output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
-build ${output} 8-stream "-" centos
+if [ $(echo $images | grep -c "centos:8-stream") -gt 0 ]; then
+    output="../images-output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
+    build ${output} 8-stream "-" centos
+fi
 
 # Copy images to the repository
-cd ../images-output
-rsync -rcavp --links --progress . images.shakenfist.com:images.shakenfist.com/
+if [ $do_not_push == 0 ]; then
+    cd ../images-output
+    rsync -rcavp --links --progress . images.shakenfist.com:images.shakenfist.com/
+else
+    echo "Skipping push"
+fi
 
 # And done
 echo

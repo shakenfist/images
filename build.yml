@@ -1,0 +1,160 @@
+- hosts: localhost
+  gather_facts: no
+  connection: ssh
+  vars:
+    identifier: unknown
+    source_path: "/home/jenkins/src/images/"
+    base_image: "label:sfci-image-publisher"
+    base_image_user: "debian"
+    keyfile_private: "/home/jenkins/id_ci"
+    keyfile_public: "/home/jenkins/id_ci.pub"
+
+  tasks:
+    - name: Create the namespace
+      shell: sf-client namespace create "{{identifier}}"
+
+    - name: Create a network
+      sf_network:
+        netblock: "10.0.0.0/24"
+        name: "image-publisher"
+        namespace: "{{identifier}}"
+      register: cinetwork
+
+    - name: Log network details
+      debug:
+        msg: "Network is {{cinetwork['meta']['uuid']}}"
+
+    - name: Create an instance
+      sf_instance:
+        name: "image-publisher"
+        cpu: 4
+        ram: 4096
+        disks:
+          - "30@{{base_image}}"
+        networkspecs:
+          - network_uuid="{{cinetwork['meta']['uuid']}}",float=True
+        ssh_key: "{{ lookup('file', keyfile_public) }}"
+        namespace: "{{identifier}}"
+        state: present
+      register: imagerebuild
+
+    - name: Add to ansible
+      add_host:
+        hostname: imagerebuild
+        ansible_ssh_host: "{{imagerebuild['meta']['network_interfaces'][0]['floating']}}"
+        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null"
+        ansible_ssh_user: "{{base_image_user}}"
+        ansible_ssh_private_key_file: "{{keyfile_private}}"
+        sf_instance_uuid: "{{imagerebuild['meta']['uuid']}}"
+        sf_network_uuid: "{{imagerebuild['meta']['network_interfaces'][0]['network_uuid']}}"
+        groups: sfall
+
+    - name: Log instance
+      debug:
+        msg: "{{imagerebuild}}"
+
+    - name: Wait for instance to present an "OpenSSH" prompt
+      wait_for:
+        port: 22
+        host: "{{hostvars['imagerebuild']['ansible_ssh_host']}}"
+        search_regex: OpenSSH
+        delay: 10
+
+- hosts: sfall
+  gather_facts: yes
+  become: true
+  vars:
+    source_path: "/home/jenkins/src/images/"
+
+  tasks:
+    # As recommended on the ansible apt module documentation...
+    - name: Install packages only when the apt process is not locked
+      apt:
+        name: bash
+        state: present
+      register: apt_action
+      retries: 100
+      until: apt_action is success or ('Failed to lock apt for exclusive operation' not in apt_action.msg and '/var/lib/dpkg/lock' not in apt_action.msg)
+
+    # I am unsure why I need to manually force this, but I do need to.
+    - name: Force an apt-get update
+      shell: apt-get update
+
+    - name: apt-get dist-upgrade
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+
+    - name: Copy build repo
+      copy:
+        src: "{{source_path}}"
+        dest: /root/
+        owner: root
+        group: root
+        mode: u=r,g=r,o=r
+
+    - name: Execute build script
+      shell:
+        cmd: bash build.sh
+        chdir: /root/images/
+
+    - name: Try and avoid the disk being corrupt when snapshot
+      shell: |
+        sleep 5
+        sync
+        sleep 1
+        sync
+        sleep 1
+        sync
+        sleep 1
+
+- hosts: localhost
+  gather_facts: no
+  connection: ssh
+  vars:
+    identifier: cron
+    base_image_user: "ubuntu"
+    keyfile_private: "/home/jenkins/id_ci"
+    keyfile_public: "/home/jenkins/id_ci.pub"
+    label: "label:sfci-image-publisher"
+
+  tasks:
+    - name: Snapshot the instance
+      sf_snapshot:
+        instance_uuid: "{{hostvars['imagerebuild']['sf_instance_uuid']}}"
+        state: present
+      register: cisnapshot
+
+    - name: Log snapshot details
+      debug:
+        msg: "{{cisnapshot}}"
+
+    - name: Record the snapshot uuid
+      set_fact:
+        snapshot_uuid: "{{cisnapshot['meta']['vda']['blob_uuid']}}"
+
+    - name: Log snapshot uuid
+      debug:
+        msg: "{{hostvars['localhost']['snapshot_uuid']}}"
+
+    - name: Add the snapshot to the label
+      shell: |
+        sf-client label update "{{label}}" "{{hostvars['localhost']['snapshot_uuid']}}"
+
+    - name: Delete the snapshot (its a label now if it passed)
+      sf_snapshot:
+        uuid: "{{cisnapshot['meta']['vda']['artifact_uuid']}}"
+        state: absent
+
+    - name: Delete build instance
+      sf_instance:
+        uuid: "{{hostvars['imagerebuild']['sf_instance_uuid']}}"
+        namespace: "{{identifier}}"
+        state: absent
+
+    - name: Delete network
+      sf_network:
+        uuid: "{{hostvars['imagerebuild']['sf_network_uuid']}}"
+        namespace: "{{identifier}}"
+        state: absent

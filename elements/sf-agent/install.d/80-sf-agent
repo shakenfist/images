@@ -1,5 +1,14 @@
 #!/bin/bash
+
 python3 -m virtualenv /opt/shakenfist
+if [ ! -e /opt/shakenfist ]; then
+    if [ "${DISTRO_NAME}" == "ubuntu" ]; then
+        # Ubuntu 18.04 requires a different module
+        apt-get install -y python3-venv
+        python3 -m venv /opt/shakenfist
+    fi
+fi
+
 /opt/shakenfist/bin/pip install shakenfist-agent
 
 cat - > /etc/systemd/system/sf-agent.service << EOF

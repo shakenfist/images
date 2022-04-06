@@ -49,7 +49,7 @@ function build () {
     export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
     export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0
-    export build_args="cloud-init cloud-init-datasources sf-agent vm"
+    export build_args="cloud-init cloud-init-datasources sf-agent utilities vm"
 
     cwd=$(pwd)
     output=$1

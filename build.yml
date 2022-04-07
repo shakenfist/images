@@ -86,6 +86,11 @@
         upgrade: dist
         autoremove: yes
 
+    - name: Remove any old build repo
+      file:
+        path: /root/build
+        state: absent
+
     - name: Copy build repo
       copy:
         src: "{{source_path}}"

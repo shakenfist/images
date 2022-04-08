@@ -88,16 +88,16 @@
 
     - name: Remove any old build repo
       file:
-        path: /root/build
+        path: /root/images
         state: absent
 
     - name: Copy build repo
       copy:
-        src: "{{source_path}}"
+        src: "{{source_path}}/images"
         dest: /root/
         owner: root
         group: root
-        mode: u=r,g=r,o=r
+        mode: preserve
 
     - name: Execute build script
       shell:
@@ -105,14 +105,7 @@
         chdir: /root/images/
 
     - name: Try and avoid the disk being corrupt when snapshot
-      shell: |
-        sleep 5
-        sync
-        sleep 1
-        sync
-        sleep 1
-        sync
-        sleep 1
+      shell: shutdown -h now
 
 - hosts: localhost
   gather_facts: no

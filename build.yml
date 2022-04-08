@@ -30,7 +30,7 @@
         cpu: 4
         ram: 4096
         disks:
-          - "30@{{base_image}}"
+          - "200@{{base_image}}"
         networkspecs:
           - network_uuid="{{cinetwork['meta']['uuid']}}",float=True
         ssh_key: "{{ lookup('file', keyfile_public) }}"

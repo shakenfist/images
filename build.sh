@@ -95,22 +95,22 @@ function build () {
 
 if [ $(echo $images | grep -c "ubuntu:18.04") -gt 0 ]; then
     output="../images-output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
-    build ${output} bionic "-" ubuntu
+    build ${output} bionic "-" "utilities ubuntu"
 fi
 
 if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
     output="../images-output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
-    build ${output} focal 3 ubuntu
+    build ${output} focal 3 "utilities ubuntu"
 fi
 
 if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then
     output="../images-output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
-    build ${output} buster 3 "debian debian-systemd"
+    build ${output} buster 3 "utilities debian debian-systemd"
 fi
 
 if [ $(echo $images | grep -c "debian:11") -gt 0 ]; then
     output="../images-output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "debian debian-systemd"
+    build ${output} bullseye 3 "utilities debian debian-systemd"
 fi
 
 if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then

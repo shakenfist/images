@@ -105,7 +105,10 @@
         chdir: /root/images/
 
     - name: Try and avoid the disk being corrupt when snapshot
-      shell: shutdown -h now
+      shell: |
+        rm -rf /root/images-output
+        fstrim /
+        shutdown -h now
 
 - hosts: localhost
   gather_facts: no

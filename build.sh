@@ -27,6 +27,31 @@ else
     cd ..
 fi
 
+# Determine if there are unreleased changes for sf-agent that we might want to
+# expose to testers
+if [ ! -e agent-python ]; then
+    git clone https://github.com/shakenfist/agent-python
+else
+    cd agent-python
+    git pull origin master
+    cd ..
+fi
+
+cd agent-python
+if [ $(git log | head -1 | grep -c tag) -lt 1 ]; then
+    export agent_beta="enabled"
+
+    pip install --upgrade readme-renderer
+    rm -rf build dist *.egg-info
+    python3 setup.py sdist bdist_wheel
+    export agent_package_path=$(ls dist/*.whl)
+    export agent_package=$(basename $agent_package_path)
+    cp ${agent_package_path} /root/images/elements/sf-agent/install.d/
+else
+    export agent_beta="disabled"
+fi
+cd ..
+
 cd diskimage-builder
 apt-get install -y `bindep --list_all newline`
 python3 setup.py develop
@@ -41,15 +66,18 @@ function build () {
     # $2: OS release name (bionic, focal, etc)
     # $3: python version (2 or 3)
     # $4: distro specific args
+    # $5: name of the shakenfist agent package
 
     echo
-    echo "Building $1"
+    echo "===================================================================="
+    echo "Building $1 (agent package $5)"
+    echo "===================================================================="
     echo
 
     export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
     export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0
-    export build_args="cloud-init cloud-init-datasources sf-agent utilities vm"
+    export build_args="cloud-init cloud-init-datasources sf-agent vm"
 
     cwd=$(pwd)
     output=$1
@@ -64,7 +92,7 @@ function build () {
     fi
 
     set -x
-    DIB_RELEASE=$2 disk-image-create $4 ${build_args} -o temp.qcow2 | tee ${output}.log
+    DIB_RELEASE=$2 DIB_SF_AGENT_PACKAGE=$5 disk-image-create $4 ${build_args} -o temp.qcow2 | tee ${output}.log
 
     # If we detected a checksum failure, clear the cache. This seems common with
     # upstream Ubuntu images for some reason.
@@ -88,39 +116,74 @@ function build () {
     rm -rf tmp*
 
     cd ${outdir}
-    rm -f latest
-    ln -s $(basename ${output}) latest.qcow2
+    if [ $(echo $output | grep -c beta) -lt 1 ]; then
+        rm -f latest.qcow2
+        ln -s $(basename ${output}) latest.qcow2
+    else
+        rm -f latest-beta.qcow2
+        ln -s $(basename ${output}) latest-beta.qcow2
+    fi
     cd ${cwd}
 }
 
 if [ $(echo $images | grep -c "ubuntu:18.04") -gt 0 ]; then
     output="../images-output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
-    build ${output} bionic "-" "utilities ubuntu"
+    build ${output} bionic "-" "utilities ubuntu" shakenfist-agent
+
+    if [ ${agent_beta} == "enabled" ]; then
+        output="../images-output/ubuntu:18.04/ubuntu-18.04-sfagent-beta-${datestamp}.qcow2"
+        build ${output} bionic "-" "utilities ubuntu" "/tmp/in_target.d/install.d/${agent_package}"
+    fi
 fi
 
 if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
     output="../images-output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
-    build ${output} focal 3 "utilities ubuntu"
+    build ${output} focal 3 "utilities ubuntu" shakenfist-agent
+
+    if [ ${agent_beta} == "enabled" ]; then
+        output="../images-output/ubuntu:20.04/ubuntu-20.04-sfagent-beta-${datestamp}.qcow2"
+        build ${output} focal 3 "utilities ubuntu" "/tmp/in_target.d/install.d/${agent_package}"
+    fi
 fi
 
 if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then
     output="../images-output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
-    build ${output} buster 3 "utilities debian debian-systemd"
+    build ${output} buster 3 "utilities debian debian-systemd" shakenfist-agent
+
+    if [ ${agent_beta} == "enabled" ]; then
+        output="../images-output/debian:10/debian-10-sfagent-beta-${datestamp}.qcow2"
+        build ${output} buster 3 "utilities debian debian-systemd" "/tmp/in_target.d/install.d/${agent_package}"
+    fi
 fi
 
 if [ $(echo $images | grep -c "debian:11") -gt 0 ]; then
     output="../images-output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "utilities debian debian-systemd"
+    build ${output} bullseye 3 "utilities debian debian-systemd" shakenfist-agent
+
+    if [ ${agent_beta} == "enabled" ]; then
+        output="../images-output/debian:11/debian-11-sfagent-beta-${datestamp}.qcow2"
+        build ${output} bullseye 3 "utilities debian debian-systemd" "/tmp/in_target.d/install.d/${agent_package}"
+    fi
 fi
 
 if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then
     output="../images-output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
-    build ${output} 7 "-" centos
+    build ${output} 7 "-" centos shakenfist-agent
+
+    if [ ${agent_beta} == "enabled" ]; then
+        output="../images-output/centos:7/centos-7-sfagent-beta-${datestamp}.qcow2"
+        build ${output} 7 "-" centos "/tmp/in_target.d/install.d/${agent_package}"
+    fi
 fi
 
 if [ $(echo $images | grep -c "centos:8-stream") -gt 0 ]; then
     output="../images-output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
-    build ${output} 8-stream "-" centos
+    build ${output} 8-stream "-" centos shakenfist-agent
+
+    if [ ${agent_beta} == "enabled" ]; then
+        output="../images-output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
+        build ${output} 8-stream "-" centos "/tmp/in_target.d/install.d/${agent_package}"
+    fi
 fi
 
 # Copy images to the repository

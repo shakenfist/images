@@ -9,7 +9,8 @@ if [ ! -e /opt/shakenfist ]; then
     fi
 fi
 
-/opt/shakenfist/bin/pip install shakenfist-agent
+DIB_SF_AGENT_PACKAGE=${DIB_SF_AGENT_PACKAGE:-shakenfist-agent}
+/opt/shakenfist/bin/pip install ${DIB_SF_AGENT_PACKAGE}
 
 cat - > /etc/systemd/system/sf-agent.service << EOF
 [Unit]

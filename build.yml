@@ -104,11 +104,11 @@
         cmd: bash build.sh
         chdir: /root/images/
 
-    - name: Try and avoid the disk being corrupt when snapshot
+    - name: Shrink the disk before snapshot
       shell: |
         rm -rf /root/images-output
         fstrim /
-        shutdown -h now
+        sync; sync; sync
 
 - hosts: localhost
   gather_facts: no
@@ -121,6 +121,13 @@
     label: "label:sfci-image-publisher"
 
   tasks:
+    - name: Shutdown instance before snapshot
+      shell: sf-client instance poweroff "{{hostvars['imagerebuild']['sf_instance_uuid']}}"
+
+    - name: Pause briefly
+      delay:
+        minutes: 1
+
     - name: Snapshot the instance
       sf_snapshot:
         instance_uuid: "{{hostvars['imagerebuild']['sf_instance_uuid']}}"

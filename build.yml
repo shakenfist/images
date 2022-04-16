@@ -125,7 +125,7 @@
       shell: sf-client instance poweroff "{{hostvars['imagerebuild']['sf_instance_uuid']}}"
 
     - name: Pause briefly
-      delay:
+      pause:
         minutes: 1
 
     - name: Snapshot the instance

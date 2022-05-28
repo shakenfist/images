@@ -148,6 +148,13 @@
 
     - name: Add the snapshot to the label
       shell: |
+        echo "Wait for blob to be registered..."
+        while [ $(sf-client blob list | grep -c "{{cisnapshot['meta']['vda']['blob_uuid']}}") -lt 1 ];do
+            echo -n "."
+            sleep 60
+        done
+        echo
+
         sf-client label update "{{label}}" "{{hostvars['localhost']['snapshot_uuid']}}"
 
     - name: Delete the snapshot (its a label now if it passed)

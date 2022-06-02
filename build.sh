@@ -1,11 +1,9 @@
 #!/bin/bash -e
 
+do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
     images="ubuntu:18.04 ubuntu:20.04 debian:10 debian:11 centos:7 centos:8-stream"
-    do_not_push=0
-else
-    do_not_push=1
 fi
 
 echo "I will build the following images: ${images}"

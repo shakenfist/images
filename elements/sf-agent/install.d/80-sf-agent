@@ -1,11 +1,11 @@
 #!/bin/bash
 
-python3 -m virtualenv --system-site-packages /opt/shakenfist
+python3 -m virtualenv /opt/shakenfist
 if [ ! -e /opt/shakenfist ]; then
     if [ "${DISTRO_NAME}" == "ubuntu" ]; then
         # Ubuntu 18.04 requires a different module
         apt-get install -y python3-venv
-        python3 -m venv /opt/shakenfist
+        python3 -m venv --system-site-packages /opt/shakenfist
     fi
 fi
 

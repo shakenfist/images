@@ -104,21 +104,12 @@
         cmd: bash build.sh "{{item}}"
         chdir: /root/images/
       with_items:
-<<<<<<< HEAD
-       - ubuntu:18.04
-       - ubuntu:20.04
-       - debian:10
-       - debian:11
-       - centos:7
-       - centos:8-stream
-=======
         - "ubuntu:18.04"
         - "ubuntu:20.04"
         - "debian:10"
         - "debian:11"
         - "centos:7"
         - "centos:8-stream"
->>>>>>> 02d2083f97f1bd2a200d4e9d024a3962bca19666
 
     - name: Shrink the disk before snapshot
       shell: |

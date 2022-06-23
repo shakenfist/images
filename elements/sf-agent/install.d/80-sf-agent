@@ -1,11 +1,16 @@
 #!/bin/bash
 
+echo "==================="
+echo "Setting up sf-agent"
 python3 -m virtualenv /opt/shakenfist
+echo "==================="
+
+set -x
 if [ ! -e /opt/shakenfist ]; then
     if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
         # Ubuntu 18.04 and Debian 10 require a different module to build
         # venvs, and some additional packages.
-        apt-get install -y python3-venv python3-dev
+        apt-get install -y python3-venv python3-dev python3-psutil
         python3 -m venv --system-site-packages /opt/shakenfist
     fi
 fi
@@ -33,3 +38,5 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 systemctl enable sf-agent
+
+set +x

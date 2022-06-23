@@ -2,8 +2,9 @@
 
 echo "==================="
 echo "Setting up sf-agent"
-python3 -m virtualenv /opt/shakenfist
 echo "==================="
+
+python3 -m virtualenv /opt/shakenfist
 
 set -x
 if [ ! -e /opt/shakenfist ]; then

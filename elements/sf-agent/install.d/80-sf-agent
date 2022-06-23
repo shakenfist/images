@@ -2,7 +2,7 @@
 
 python3 -m virtualenv /opt/shakenfist
 if [ ! -e /opt/shakenfist ]; then
-    if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0]; then
+    if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
         # Ubuntu 18.04 and Debian 10 require a different module
         apt-get install -y python3-venv
         python3 -m venv /opt/shakenfist

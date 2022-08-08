@@ -8,6 +8,7 @@
     base_image_user: "debian"
     keyfile_private: "/home/jenkins/id_ci"
     keyfile_public: "/home/jenkins/id_ci.pub"
+    build_image: "debian:11"
 
   tasks:
     - name: Create the namespace
@@ -65,6 +66,7 @@
   become: true
   vars:
     source_path: "/home/jenkins/src/images/"
+    build_image: "debian:11"
 
   tasks:
     # As recommended on the ansible apt module documentation...
@@ -101,15 +103,8 @@
 
     - name: Execute build script
       shell:
-        cmd: bash build.sh "{{item}}"
+        cmd: bash build.sh "{{build_image}}"
         chdir: /root/images/
-      with_items:
-        - "ubuntu:18.04"
-        - "ubuntu:20.04"
-        - "debian:10"
-        - "debian:11"
-        - "centos:7"
-        - "centos:8-stream"
 
     - name: Shrink the disk before snapshot
       shell: |

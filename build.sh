@@ -12,7 +12,7 @@ echo
 # Ensure we're up to date, and have diskimage-builder installed.
 apt-get update
 apt-get dist-upgrade -y
-apt-get install -y git python3 python3-dev python3-pip python3-wheel rsync
+apt-get install -y git python3 python3-dev python3-pip python3-wheel rsync xz-utils
 pip3 install bindep
 
 # We have to install diskimage-builder this way because the Ubuntu dependancies

@@ -30,6 +30,12 @@ apt-get install -y `bindep --list_all newline`
 python3 setup.py develop
 cd ..
 
+# diskimage-builder requires the hostname be known, or it gets confused
+hostname=$(hostname)
+if [ $(grep -c $hostname /etc/hosts) -lt 1 ]; then
+    sed -i "s/127.0.0.1\tlocalhost/127.0.0.1\tlocalhost $hostname/" /etc/hosts
+fi
+
 # Build images
 rm -rf ../images-output
 datestamp=$(date +%Y%m%d)

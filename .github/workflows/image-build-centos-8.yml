@@ -1,0 +1,41 @@
+name: Build centos-8
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '00 14 * * *'        # utc --> 3am local ignoring DST
+
+jobs:
+  centos-8:
+    runs-on: self-hosted
+    timeout-minutes: 180
+
+    # NOTE(mikal): git repos are checked out to /srv/github/_work/{org}/{repo}
+    # which is available as GITHUB_WORKSPACE. You can find other environment
+    # variables at https://docs.github.com/en/actions/learn-github-actions/environment-variables
+
+    steps:
+      - name: Remove previous unfinished runs
+        uses: n1hility/cancel-previous-runs@v2
+        with: 
+          token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: image-build-centos-8.yml
+
+      - name: Set environment variables
+        run: |
+          echo "SHAKENFIST_NAMESPACE=$(hostname)" >> $GITHUB_ENV
+
+      - name: Checkout the image repository
+        uses: actions/checkout@v3
+        with:
+          path: images
+
+      - name: Run the image build
+        run: |
+          cd ${GITHUB_WORKSPACE}/images
+          ANSIBLE_LOCAL_TEMP=$WORKSPACE/$BUILD_TAG/tmp ansible-playbook \
+              -i /home/debian/ansible-hosts \
+              --extra-vars "identifier=${SHAKENFIST_NAMESPACE} source_path=${GITHUB_WORKSPACE} \
+              base_image=sf://label/system/sfci-image-publisher-centos-8-stream base_image_user=debian label=sfci-image-publisher-centos-8-stream \
+              build_image=centos:8-stream" \
+              build.yml

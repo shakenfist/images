@@ -6,32 +6,38 @@ JOBS = [
     {
         'name': 'debian-10',
         'baseimage': 'debian:11',
-        'baseuser': 'debian'
+        'baseuser': 'debian',
+        'image': 'debian:10'
     },
     {
         'name': 'debian-11',
         'baseimage': 'debian:11',
-        'baseuser': 'debian'
+        'baseuser': 'debian',
+        'image': 'debian:11'
     },
     {
         'name': 'ubuntu-1804',
         'baseimage': 'debian:11',
-        'baseuser': 'debian'
+        'baseuser': 'debian',
+        'image': 'ubuntu:18.04'
     },
     {
         'name': 'ubuntu-2004',
         'baseimage': 'debian:11',
-        'baseuser': 'debian'
+        'baseuser': 'debian',
+        'image': 'ubuntu:20.04'
     },
     {
         'name': 'centos-7',
         'baseimage': 'debian:11',
-        'baseuser': 'debian'
+        'baseuser': 'debian',
+        'image': 'centos:7'
     },
     {
         'name': 'centos-8',
         'baseimage': 'debian:11',
-        'baseuser': 'debian'
+        'baseuser': 'debian',
+        'image': 'centos:8-stream'
     }
 ]
 

@@ -36,6 +36,5 @@ jobs:
           ANSIBLE_LOCAL_TEMP=$WORKSPACE/$BUILD_TAG/tmp ansible-playbook \
               -i /home/debian/ansible-hosts \
               --extra-vars "identifier=${SHAKENFIST_NAMESPACE} source_path=${GITHUB_WORKSPACE} \
-              base_image={{baseimage}} base_image_user={{baseuser}} label={{label}} \
-              build_image={{image}}" \
+              base_image={{baseimage}} base_image_user={{baseuser}} build_image={{image}}" \
               build.yml

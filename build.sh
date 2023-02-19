@@ -3,11 +3,13 @@
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:18.04 ubuntu:20.04 debian:10 debian:11 centos:7 centos:8-stream"
+    images="ubuntu:16.04 ubuntu:18.04 ubuntu:20.04 debian:10 debian:11 centos:7 centos:8-stream"
 fi
 
 echo "I will build the following images: ${images}"
 echo
+
+export PATH=$PATH:/usr/local/bin/
 
 # Ensure we're up to date, and have diskimage-builder installed.
 apt-get update
@@ -37,7 +39,8 @@ if [ $(grep -c $hostname /etc/hosts) -lt 1 ]; then
 fi
 
 # Build images
-rm -rf ../images-output
+mkdir -p /srv/sf-images/cache
+rm -rf /srv/sf-images/output
 datestamp=$(date +%Y%m%d)
 
 function build () {
@@ -53,6 +56,7 @@ function build () {
     echo "===================================================================="
     echo
 
+    export DIB_IMAGE_CACHE="/srv/sf-images/cache"
     export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
     export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0
@@ -76,7 +80,7 @@ function build () {
     # If we detected a checksum failure, clear the cache. This seems common with
     # upstream Ubuntu images for some reason.
     if [ $(grep -c "computed checksum did NOT match" ${output}.log) -gt 0 ]; then
-        rm -rf ~/.cache/image-create
+        rm -rf /srv/sf-images/cache
     fi
 
     # Why is it so hard to detect a DIB failure?
@@ -100,40 +104,45 @@ function build () {
     cd ${cwd}
 }
 
+if [ $(echo $images | grep -c "ubuntu:16.04") -gt 0 ]; then
+    output="/srv/sf-images/output/ubuntu:16.04/ubuntu-16.04-sfagent-${datestamp}.qcow2"
+    build ${output} xenial "-" "utilities ubuntu" shakenfist-agent
+fi
+
 if [ $(echo $images | grep -c "ubuntu:18.04") -gt 0 ]; then
-    output="../images-output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
+    output="/srv/sf-images/output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
     build ${output} bionic "-" "utilities ubuntu" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
-    output="../images-output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
+    output="/srv/sf-images/output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
     build ${output} focal 3 "utilities ubuntu" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then
-    output="../images-output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
+    output="/srv/sf-images/output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
     build ${output} buster 3 "utilities debian debian-systemd" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian:11") -gt 0 ]; then
-    output="../images-output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
+    output="/srv/sf-images/output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
     build ${output} bullseye 3 "utilities debian debian-systemd" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then
-    output="../images-output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
+    output="/srv/sf-images/output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
     build ${output} 7 "-" centos shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "centos:8-stream") -gt 0 ]; then
-    output="../images-output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
+    output="/srv/sf-images/output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
     build ${output} 8-stream "-" centos shakenfist-agent
 fi
 
 # Copy images to the repository
 if [ $do_not_push == 0 ]; then
-    cd ../images-output
-    rsync -rcavp --links --progress . images.shakenfist.com:images.shakenfist.com/
+    cd /srv/sf-images/output
+    rsync -rcavp --links --progress . /srv/www/images.shakenfist.com/
 else
     echo "Skipping push"
 fi

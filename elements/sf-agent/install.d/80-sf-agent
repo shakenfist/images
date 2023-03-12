@@ -4,15 +4,28 @@ echo "==================="
 echo "Setting up sf-agent"
 echo "==================="
 
-python3 -m virtualenv /opt/shakenfist
+if [ $(echo "buster,xenial,bionic" | grep -c "${DIB_RELEASE}") -gt 0 ]; then
+     # The packaged version of psutil on Debian 10 is so old we have to
+     # compile our own.
+     apt-get install -y build-essential python3-dev
+fi
+
+python3 -m virtualenv --system-site-packages /opt/shakenfist
 
 set -x
 if [ ! -e /opt/shakenfist ]; then
     if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
         # Ubuntu 18.04 and Debian 10 require a different module to build
         # venvs, and some additional packages.
-        apt-get install -y python3-venv python3-dev python3-psutil
+        apt-get install -y python3-venv python3-dev python3-pip
         python3 -m venv --system-site-packages /opt/shakenfist
+
+        # This odd pip invocation is because older Ubuntu's sometimes
+        # doesn't create a pip symlink in the venv. So, we use the module
+	# to install a newer pip. The version pin is because pip 21+
+	# doesn't support python 3.5, and we're in ancient python land
+	# here.
+        /opt/shakenfist/bin/python -m pip install -U "pip<21.0"
     fi
 fi
 

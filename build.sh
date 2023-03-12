@@ -3,13 +3,11 @@
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:16.04 ubuntu:18.04 ubuntu:20.04 debian:10 debian:11 centos:7 centos:8-stream"
+    images="ubuntu:16.04 ubuntu:18.04 ubuntu:20.04 ubuntu:22.04 debian:10 debian:11 centos:7 centos:8-stream"
 fi
 
 echo "I will build the following images: ${images}"
 echo
-
-export PATH=$PATH:/usr/local/bin/
 
 # Ensure we're up to date, and have diskimage-builder installed.
 apt-get update
@@ -60,7 +58,8 @@ function build () {
     export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
     export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0
-    export build_args="cloud-init cloud-init-datasources sf-agent vm"
+    export DIB_GRUB_TIMEOUT=0
+    export build_args="cloud-init cloud-init-datasources sf-agent block-device-efi vm"
 
     cwd=$(pwd)
     output=$1
@@ -75,7 +74,8 @@ function build () {
     fi
 
     set -x
-    DIB_RELEASE=$2 DIB_SF_AGENT_PACKAGE=$5 disk-image-create $4 ${build_args} -o temp.qcow2 | tee ${output}.log
+    # Build an uncompressed image first
+    DIB_RELEASE=$2 DIB_SF_AGENT_PACKAGE=$5 /usr/local/bin/disk-image-create $4 ${build_args} -u -o temp.qcow2 | tee ${output}.log
 
     # If we detected a checksum failure, clear the cache. This seems common with
     # upstream Ubuntu images for some reason.
@@ -95,8 +95,9 @@ function build () {
     fi
     set +x
 
-    mv temp.qcow2 ${output}
-    rm -rf tmp*
+    # Transcode the image into the preferred format
+    qemu-img convert -t none -o cluster_size=2048K -c -O qcow2 temp.qcow2 ${output}
+    rm -rf tmp* temp.qcow2
 
     cd ${outdir}
     rm -f latest.qcow2
@@ -117,6 +118,11 @@ fi
 if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
     build ${output} focal 3 "utilities ubuntu" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "ubuntu:22.04") -gt 0 ]; then
+    output="/srv/sf-images/output/ubuntu:22.04/ubuntu-22.04-sfagent-${datestamp}.qcow2"
+    build ${output} jammy 3 "utilities ubuntu" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then

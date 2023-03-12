@@ -1,3 +1,8 @@
+cloud-guest-utils:
 iputils-ping:
 traceroute:
+resolvconf:
 rsyslog:
+spice-vdagent:
+util-linux:
+vim:

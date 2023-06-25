@@ -3,7 +3,7 @@
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:16.04 ubuntu:18.04 ubuntu:20.04 ubuntu:22.04 debian:10 debian:11 centos:7 centos:8-stream"
+    images="ubuntu:16.04 ubuntu:18.04 ubuntu:20.04 ubuntu:22.04 debian:10 debian:11 debian:12 centos:7 centos:8-stream"
 fi
 
 echo "I will build the following images: ${images}"
@@ -135,6 +135,12 @@ if [ $(echo $images | grep -c "debian:11") -gt 0 ]; then
     build ${output} bullseye 3 "utilities debian debian-systemd" shakenfist-agent
 fi
 
+
+if [ $(echo $images | grep -c "debian:12") -gt 0 ]; then
+    output="/srv/sf-images/output/debian:12/debian-12-sfagent-${datestamp}.qcow2"
+    build ${output} bookworm 3 "utilities debian debian-systemd" shakenfist-agent
+fi
+
 if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then
     output="/srv/sf-images/output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
     build ${output} 7 "-" centos shakenfist-agent
@@ -143,6 +149,11 @@ fi
 if [ $(echo $images | grep -c "centos:8-stream") -gt 0 ]; then
     output="/srv/sf-images/output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
     build ${output} 8-stream "-" centos shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "centos:9-stream") -gt 0 ]; then
+    output="/srv/sf-images/output/centos:9-stream/centos-9-stream-sfagent-${datestamp}.qcow2"
+    build ${output} 9-stream "-" centos shakenfist-agent
 fi
 
 # Copy images to the repository

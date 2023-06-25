@@ -10,6 +10,15 @@ if [ $(echo "buster,xenial,bionic" | grep -c "${DIB_RELEASE}") -gt 0 ]; then
      apt-get install -y build-essential python3-dev
 fi
 
+if [ $(echo "9-stream" | grep -c "${DIB_RELEASE}") -lt 1 ]; then
+     # centos:9-stream doesn't have python3-virtualenv and python3-wheel
+     if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
+         apt-get install -y python3-virtualenv python3-wheel
+     else
+	 yum install -y python3-virtualenv python3-wheel
+     fi
+fi
+
 python3 -m virtualenv --system-site-packages /opt/shakenfist
 
 set -x

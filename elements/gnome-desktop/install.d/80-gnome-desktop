@@ -1,0 +1,13 @@
+#!/bin/bash
+
+echo "==================="
+echo "Setting up gnome-desktop"
+echo "==================="
+
+# We expect the network to be managed by cloud-init, so we
+# really don't want network manager here.
+apt-get purge network-manager
+
+echo "==================="
+echo "Set up gnome-desktop"
+echo "==================="

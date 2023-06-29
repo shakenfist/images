@@ -63,3 +63,6 @@ systemctl daemon-reload
 systemctl enable sf-agent
 
 set +x
+echo "==================="
+echo "Set up sf-agent"
+echo "==================="

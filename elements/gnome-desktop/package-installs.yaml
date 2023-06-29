@@ -1,0 +1,6 @@
+xorg:
+xserver-xorg-video-qxl:
+xserver-xorg-core:
+xinit:
+gnome:
+gdm3:

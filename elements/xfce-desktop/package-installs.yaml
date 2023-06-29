@@ -1,0 +1,8 @@
+xorg:
+xserver-xorg-video-qxl:
+xserver-xorg-core:
+xinit:
+xfce4:
+xfce4-goodies:
+dbus-x11:
+x11-xserver-utils:

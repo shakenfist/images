@@ -6,3 +6,4 @@ rsyslog:
 spice-vdagent:
 util-linux:
 vim:
+apparmor:

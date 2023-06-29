@@ -3,7 +3,7 @@
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:16.04 ubuntu:18.04 ubuntu:20.04 ubuntu:22.04 debian:10 debian:11 debian:12 centos:7 centos:8-stream"
+    images="ubuntu:16.04 ubuntu:18.04 ubuntu:20.04 ubuntu:22.04 debian:10 debian:11 debian:12 centos:7 centos:8-stream debian-docker:11"
 fi
 
 echo "I will build the following images: ${images}"
@@ -59,6 +59,11 @@ function build () {
     export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0
     export DIB_GRUB_TIMEOUT=0
+
+    # Note the default here is "nofb nomodeset gfxpayload=text" which breaks
+    # graphical consoles if you choose to install one later...
+    export DIB_BOOTLOADER_DEFAULT_CMDLINE="earlyprintk=ttyS0,115200 consoleblank=0"
+
     export build_args="cloud-init cloud-init-datasources sf-agent block-device-efi vm"
 
     cwd=$(pwd)
@@ -154,6 +159,21 @@ fi
 if [ $(echo $images | grep -c "centos:9-stream") -gt 0 ]; then
     output="/srv/sf-images/output/centos:9-stream/centos-9-stream-sfagent-${datestamp}.qcow2"
     build ${output} 9-stream "-" centos shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-docker:11") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-docker:11/debian-11-docker-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "utilities debian debian-systemd docker-host" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-gnome:11") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-gnome:11/debian-11-gnome-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "utilities debian debian-systemd gnome-desktop" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-xfce:11") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-xfce:11/debian-11-xfce-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "utilities debian debian-systemd xfce-desktop" shakenfist-agent
 fi
 
 # Copy images to the repository

@@ -1,0 +1,26 @@
+What is this?
+
+These are virtual machine base images used by the Shaken Fist
+cloud orchestrator (shakenfist.com). Each should run equally
+well on OpenStack, native KVM, or a variety of other hypervisors
+with the exception that these all have the Shaken Fist guest
+agent baked into them. That's ok for other locations, but each
+to their own.
+
+The current options are:
+
+* centos: 7, 8-stream (current default for "centos"), 9-stream
+  (work in progress).
+* debian: 10, 11 (current default for "debian"), 12 (work in
+  progress).
+* debian-docker: 11. This is a version of debian 11 with docker
+  pre-installed for convenience.
+* debian-gnome: 11. This is a version of debian 11 with the gnome
+  desktop pre-installed for convenience.
+* debian:xfce: 11. This is a version of debian 11 with the XFCE
+  desktop pre-installed for convenience.
+* ubuntu: 16.04, 18.04, 20.04, and 22.04 (current default for
+  "ubuntu").
+
+In each directory is a latest.qcow2, which points to... the
+most recent version of each image.

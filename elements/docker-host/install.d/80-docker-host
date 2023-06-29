@@ -1,0 +1,11 @@
+#!/bin/bash
+
+echo "==================="
+echo "Setting up docker-host"
+echo "==================="
+
+usermod -a -G docker debian
+
+echo "==================="
+echo "Set up docker-host"
+echo "==================="

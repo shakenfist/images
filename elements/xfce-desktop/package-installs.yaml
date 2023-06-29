@@ -6,3 +6,5 @@ xfce4:
 xfce4-goodies:
 dbus-x11:
 x11-xserver-utils:
+lightdm:
+firefox-esr:

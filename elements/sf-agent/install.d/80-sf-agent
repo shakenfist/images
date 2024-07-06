@@ -27,15 +27,17 @@ if [ ! -e /opt/shakenfist ]; then
         # Ubuntu 18.04 and Debian 10 require a different module to build
         # venvs, and some additional packages.
         apt-get install -y python3-venv python3-dev python3-pip
-        python3 -m venv --system-site-packages /opt/shakenfist
-
-        # This odd pip invocation is because older Ubuntu's sometimes
-        # doesn't create a pip symlink in the venv. So, we use the module
-	# to install a newer pip. The version pin is because pip 21+
-	# doesn't support python 3.5, and we're in ancient python land
-	# here.
-        /opt/shakenfist/bin/python -m pip install -U "pip<21.0"
     fi
+
+    # Now try with venv
+    python3 -m venv --system-site-packages /opt/shakenfist
+
+    # This odd pip invocation is because older Ubuntu's sometimes
+    # doesn't create a pip symlink in the venv. So, we use the module
+    # to install a newer pip. The version pin is because pip 21+
+    # doesn't support python 3.5, and we're in ancient python land
+    # here.
+    /opt/shakenfist/bin/python -m pip install -U "pip<21.0"
 fi
 
 DIB_SF_AGENT_PACKAGE=${DIB_SF_AGENT_PACKAGE:-shakenfist-agent}

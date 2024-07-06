@@ -1,9 +1,15 @@
 #!/bin/bash -e
 
+# Obsolete image builds (not built by default, but still here just in case):
+#   centos:7 centos:8-stream
+#   debian:10
+#   fedora:34 fedora:38 fedora:39
+#   ubuntu:16.04 ubuntu:18.04
+
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:16.04 ubuntu:18.04 ubuntu:20.04 ubuntu:22.04 debian:10 debian:11 debian:12 centos:7 centos:8-stream debian-docker:11"
+    images="ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 fedora:40 rocky:8 rocky:9"
 fi
 
 echo "I will build the following images: ${images}"
@@ -12,7 +18,7 @@ echo
 # Ensure we're up to date, and have diskimage-builder installed.
 apt-get update
 apt-get dist-upgrade -y
-apt-get install -y git python3 python3-dev python3-pip python3-wheel rsync xz-utils
+apt-get install -y git python3 python3-dev python3-pip python3-wheel rsync xz-utils podman
 pip3 install bindep
 
 # We have to install diskimage-builder this way because the Ubuntu dependancies
@@ -20,6 +26,7 @@ pip3 install bindep
 if [ ! -e diskimage-builder ]; then
     git clone https://github.com/openstack/diskimage-builder
 else
+    git stash
     cd diskimage-builder
     git stash
     git pull origin master
@@ -45,7 +52,6 @@ fi
 
 # Build images
 mkdir -p /srv/sf-images/cache
-rm -rf /srv/sf-images/output
 datestamp=$(date +%Y%m%d)
 
 function build () {
@@ -61,11 +67,13 @@ function build () {
     echo "===================================================================="
     echo
 
-    export DIB_IMAGE_CACHE="/srv/sf-images/cache"
+    rm -rf /srv/sf-images/output
     export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
-    export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0
+    export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
+    export DIB_CLOUD_INIT_ETC_HOSTS=1
     export DIB_GRUB_TIMEOUT=0
+    export DIB_IMAGE_CACHE="/srv/sf-images/cache"
 
     # Note the default here is "nofb nomodeset gfxpayload=text" which breaks
     # graphical consoles if you choose to install one later...
@@ -114,81 +122,144 @@ function build () {
     cd ${outdir}
     rm -f latest.qcow2
     ln -s $(basename ${output}) latest.qcow2
+
+    # Copy images to the repository
+    if [ $do_not_push == 0 ]; then
+        cd /srv/sf-images/output
+        rsync -rcavp --links --progress . /srv/www/images.shakenfist.com/
+
+        # Cleanup old images
+	dirname=$(ls)
+	cd "/srv/www/images.shakenfist.com/$dirname"
+        numimages=$( ls *.qcow2 | grep -v latest | sort | wc -l )
+        numextra=$(( $numimages - 7 ))
+
+        for img in $( ls *.qcow2 | grep -v latest | sort | head -$numextra ); do
+            echo "Removing $img"
+            rm -f $img $img.log
+        done
+    else
+        echo "Skipping push"
+    fi
     cd ${cwd}
 }
 
+# Too old for the agent to run, but convenient to have for testing
 if [ $(echo $images | grep -c "ubuntu:16.04") -gt 0 ]; then
-    output="/srv/sf-images/output/ubuntu:16.04/ubuntu-16.04-sfagent-${datestamp}.qcow2"
-    build ${output} xenial "-" "utilities ubuntu" shakenfist-agent
+    output="/srv/sf-images/output/ubuntu:16.04/ubuntu-16.04-${datestamp}.qcow2"
+    build ${output} xenial "-" "apparmor utilities debian-old-extras ubuntu"
 fi
 
+# Images containing the agent
 if [ $(echo $images | grep -c "ubuntu:18.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
-    build ${output} bionic "-" "utilities ubuntu" shakenfist-agent
+    build ${output} bionic "-" "apparmor utilities debian-old-extras ubuntu" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
-    build ${output} focal 3 "utilities ubuntu" shakenfist-agent
+    build ${output} focal 3 "apparmor utilities debian-old-extras ubuntu" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "ubuntu:22.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:22.04/ubuntu-22.04-sfagent-${datestamp}.qcow2"
-    build ${output} jammy 3 "utilities ubuntu" shakenfist-agent
+    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "ubuntu:24.04") -gt 0 ]; then
+    output="/srv/sf-images/output/ubuntu:24.04/ubuntu-24.04-sfagent-${datestamp}.qcow2"
+    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then
     output="/srv/sf-images/output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
-    build ${output} buster 3 "utilities debian debian-systemd" shakenfist-agent
+    build ${output} buster 3 "apparmor utilities debian-old-extras debian debian-systemd" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian:11") -gt 0 ]; then
     output="/srv/sf-images/output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "utilities debian debian-systemd" shakenfist-agent
+    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd" shakenfist-agent
 fi
 
 
 if [ $(echo $images | grep -c "debian:12") -gt 0 ]; then
     output="/srv/sf-images/output/debian:12/debian-12-sfagent-${datestamp}.qcow2"
-    build ${output} bookworm 3 "utilities debian debian-systemd" shakenfist-agent
+    build ${output} bookworm 3 "apparmor utilities debian-12-extras debian debian-systemd" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then
     output="/srv/sf-images/output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
-    build ${output} 7 "-" centos shakenfist-agent
+    build ${output} 7 "-" "centos rhel-extras" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "centos:8-stream") -gt 0 ]; then
     output="/srv/sf-images/output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
-    build ${output} 8-stream "-" centos shakenfist-agent
+    build ${output} 8-stream "-" "centos rhel-extras" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "centos:9-stream") -gt 0 ]; then
     output="/srv/sf-images/output/centos:9-stream/centos-9-stream-sfagent-${datestamp}.qcow2"
-    build ${output} 9-stream "-" centos shakenfist-agent
+    build ${output} 9-stream "-" "centos rhel-extras" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "fedora:34") -gt 0 ]; then
+    output="/srv/sf-images/output/fedora:34/fedora-34-sfagent-${datestamp}.qcow2"
+    build ${output} 34 "-" "fedora rhel-extras" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "fedora:38") -gt 0 ]; then
+    output="/srv/sf-images/output/fedora:38/fedora-38-sfagent-${datestamp}.qcow2"
+    build ${output} 38 "-" "fedora rhel-extras" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "fedora:39") -gt 0 ]; then
+    output="/srv/sf-images/output/fedora:39/fedora-39-sfagent-${datestamp}.qcow2"
+    build ${output} 39 "-" "fedora rhel-extras" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "fedora:40") -gt 0 ]; then
+    output="/srv/sf-images/output/fedora:40/fedora-40-sfagent-${datestamp}.qcow2"
+    build ${output} 40 "-" "fedora rhel-extras" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "rocky:8") -gt 0 ]; then
+    output="/srv/sf-images/output/rocky:8/rocky-8-sfagent-${datestamp}.qcow2"
+    build ${output} 8 "-" "rocky-container rhel-extras" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "rocky:9") -gt 0 ]; then
+    output="/srv/sf-images/output/rocky:9/rocky-9-sfagent-${datestamp}.qcow2"
+    build ${output} 9 "-" "rocky-container rhel-extras" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-docker:11") -gt 0 ]; then
     output="/srv/sf-images/output/debian-docker:11/debian-11-docker-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "utilities debian debian-systemd docker-host" shakenfist-agent
+    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd docker-host" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-docker:12") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-docker:12/debian-12-docker-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras docker-host" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-gnome:11") -gt 0 ]; then
     output="/srv/sf-images/output/debian-gnome:11/debian-11-gnome-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "utilities debian debian-systemd gnome-desktop" shakenfist-agent
+    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd gnome-desktop" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-gnome:12") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-gnome:12/debian-12-gnome-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-xfce:11") -gt 0 ]; then
     output="/srv/sf-images/output/debian-xfce:11/debian-11-xfce-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "utilities debian debian-systemd xfce-desktop" shakenfist-agent
+    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd xfce-desktop" shakenfist-agent
 fi
 
-# Copy images to the repository
-if [ $do_not_push == 0 ]; then
-    cd /srv/sf-images/output
-    rsync -rcavp --links --progress . /srv/www/images.shakenfist.com/
-else
-    echo "Skipping push"
+if [ $(echo $images | grep -c "debian-xfce:12") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-xfce:12/debian-12-xfce-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
 fi
 
 # And done

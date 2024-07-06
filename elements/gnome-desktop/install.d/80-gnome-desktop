@@ -6,7 +6,7 @@ echo "==================="
 
 # We expect the network to be managed by cloud-init, so we
 # really don't want network manager here.
-apt-get purge network-manager
+#apt-get purge network-manager
 
 echo "==================="
 echo "Set up gnome-desktop"

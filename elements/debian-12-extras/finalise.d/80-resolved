@@ -1,0 +1,15 @@
+#!/bin/bash
+
+echo "==========================="
+echo "Setting up systemd-resolved"
+echo "==========================="
+
+# Because systemd-resolved overwrites our DNS config, it breaks the
+# rest of the build process unless we do a little dance, so this
+# script installs the package and then immediately sets a DNS we know
+# works inside our build environment.
+apt-get install -y systemd-resolved
+
+echo "======================="
+echo "Set up systemd-resolved"
+echo "======================="

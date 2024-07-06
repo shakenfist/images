@@ -1,0 +1,44 @@
+From 9779166c34e182006bb06dbd1167c0db278a280d Mon Sep 17 00:00:00 2001
+From: Dmitriy Rabotyagov <dmitriy.rabotyagov@cleura.com>
+Date: Mon, 17 Jun 2024 15:51:28 +0200
+Subject: [PATCH] Add support for building Fedora 40
+
+Fedora 40 has changed naming convention for images stored in mirrors
+To have a valid link we need to add logic for regexp and base image
+naming depending of the image version.
+
+Change-Id: I6f177eb96598a1f7dae240c401a50e0643214d93
+---
+ .../elements/fedora/root.d/10-fedora-cloud-image | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/diskimage_builder/elements/fedora/root.d/10-fedora-cloud-image b/diskimage_builder/elements/fedora/root.d/10-fedora-cloud-image
+index 5a2fb4f75..4fe1ff0f1 100755
+--- a/diskimage_builder/elements/fedora/root.d/10-fedora-cloud-image
++++ b/diskimage_builder/elements/fedora/root.d/10-fedora-cloud-image
+@@ -53,10 +53,18 @@ else
+     esac
+     # We have curl write headers to stderr so that we can debug fedora
+     # mirror locations that don't have valid subreleases in their paths.
+-    SUBRELEASE_REGEXP=${SUBRELEASE_REGEXP:-'(?<=Fedora-Cloud-Base-'${DIB_RELEASE}'-).*?(?=.'${ARCH}'.qcow2)'}
+-    SUBRELEASE=$(head -1 < <(curl -Lis -D /dev/stderr $DIB_CLOUD_IMAGES/ | grep -o -P $SUBRELEASE_REGEXP | sort -r))
+-    BASE_IMAGE_FILE=${BASE_IMAGE_FILE:-Fedora-Cloud-Base-$DIB_RELEASE-$SUBRELEASE.$ARCH.qcow2}
+-    BASE_IMAGE_TAR=Fedora-Cloud-Base-$DIB_RELEASE-$SUBRELEASE.$ARCH.tgz
++    if [[ ${DIB_RELEASE} -ge 40 ]]; then
++        SUBRELEASE_REGEXP=${SUBRELEASE_REGEXP:-'(?<=Fedora-Cloud-Base-Generic\.'${ARCH}'-'${DIB_RELEASE}'-).*?(?=\.qcow2)'}
++        SUBRELEASE=$(head -1 < <(curl -Lis -D /dev/stderr $DIB_CLOUD_IMAGES/ | grep -o -P $SUBRELEASE_REGEXP | sort -r))
++        BASE_IMAGE_FILE=${BASE_IMAGE_FILE:-Fedora-Cloud-Base-Generic.$ARCH-$DIB_RELEASE-$SUBRELEASE.qcow2}
++        BASE_IMAGE_TAR=Fedora-Cloud-Base-Generic.$ARCH-$DIB_RELEASE-$SUBRELEASE.tgz
++    else
++        SUBRELEASE_REGEXP=${SUBRELEASE_REGEXP:-'(?<=Fedora-Cloud-Base-'${DIB_RELEASE}'-).*?(?=.'${ARCH}'.qcow2)'}
++        SUBRELEASE=$(head -1 < <(curl -Lis -D /dev/stderr $DIB_CLOUD_IMAGES/ | grep -o -P $SUBRELEASE_REGEXP | sort -r))
++        BASE_IMAGE_FILE=${BASE_IMAGE_FILE:-Fedora-Cloud-Base-$DIB_RELEASE-$SUBRELEASE.$ARCH.qcow2}
++        BASE_IMAGE_TAR=Fedora-Cloud-Base-$DIB_RELEASE-$SUBRELEASE.$ARCH.tgz
++    fi
++
+     IMAGE_LOCATION=$DIB_CLOUD_IMAGES/$BASE_IMAGE_FILE
+     CACHED_IMAGE=$DIB_IMAGE_CACHE/$BASE_IMAGE_FILE
+ fi
+-- 
+2.30.2
+

@@ -21,11 +21,18 @@ if [ ! -e diskimage-builder ]; then
     git clone https://github.com/openstack/diskimage-builder
 else
     cd diskimage-builder
+    git stash
     git pull origin master
     cd ..
 fi
 
 cd diskimage-builder
+
+for patch in ../diskimage-builder-patches/*.patch; do
+    echo "Applying patch $patch"
+    git apply $patch
+done
+
 apt-get install -y `bindep --list_all newline`
 python3 setup.py develop
 cd ..

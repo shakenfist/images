@@ -158,17 +158,17 @@ fi
 
 if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
-    build ${output} focal 3 "apparmor utilities debian-old-extras ubuntu" shakenfist-agent
+    build ${output} focal 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "ubuntu:22.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:22.04/ubuntu-22.04-sfagent-${datestamp}.qcow2"
-    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu" shakenfist-agent
+    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "ubuntu:24.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:24.04/ubuntu-24.04-sfagent-${datestamp}.qcow2"
-    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu" shakenfist-agent
+    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then

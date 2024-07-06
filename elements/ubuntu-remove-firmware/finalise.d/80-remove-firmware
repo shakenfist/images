@@ -1,0 +1,11 @@
+#!/bin/bash
+
+echo "==========================="
+echo "Removing firmware to save space"
+echo "==========================="
+
+apt purge -y linux-firmware
+
+echo "======================="
+echo "Removed firmware to save space"
+echo "======================="

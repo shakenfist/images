@@ -1,0 +1,15 @@
+#!/bin/bash
+
+echo "==========================="
+echo "Removing snaps to save space"
+echo "==========================="
+
+for snap in $(snap list | egrep -v "^Name" | cut -f 1 -d " "); do
+   snap remove --purge ${snap}
+done
+
+apt purge -y snapd
+
+echo "======================="
+echo "Removed snaps to save space"
+echo "======================="

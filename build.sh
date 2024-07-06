@@ -26,7 +26,6 @@ pip3 install bindep
 if [ ! -e diskimage-builder ]; then
     git clone https://github.com/openstack/diskimage-builder
 else
-    git stash
     cd diskimage-builder
     git stash
     git pull origin master

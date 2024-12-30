@@ -9,7 +9,7 @@
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 fedora:40 rocky:8 rocky:9"
+    images="ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 fedora:40 fedora:41 rocky:8 rocky:9"
 fi
 
 echo "I will build the following images: ${images}"
@@ -105,12 +105,12 @@ function build () {
     # Why is it so hard to detect a DIB failure?
     if [ $? -gt 0 ]; then
         echo "BUILD FAILED."
-        exit 1
+        return 1
     fi
 
     if [ $(grep -c "Build completed successfully" ${output}.log) -lt 1 ]; then
         echo "BUILD FAILED"
-        exit 1
+        return 1
     fi
     set +x
 
@@ -141,6 +141,7 @@ function build () {
         echo "Skipping push"
     fi
     cd ${cwd}
+    return 0
 }
 
 # Too old for the agent to run, but convenient to have for testing
@@ -219,6 +220,11 @@ fi
 if [ $(echo $images | grep -c "fedora:40") -gt 0 ]; then
     output="/srv/sf-images/output/fedora:40/fedora-40-sfagent-${datestamp}.qcow2"
     build ${output} 40 "-" "fedora rhel-extras" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "fedora:41") -gt 0 ]; then
+    output="/srv/sf-images/output/fedora:41/fedora-41-sfagent-${datestamp}.qcow2"
+    build ${output} 41 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "rocky:8") -gt 0 ]; then

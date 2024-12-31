@@ -1,0 +1,11 @@
+#!/bin/bash
+
+echo "==========================="
+echo "Removing pollinate entropy-as-a-service"
+echo "==========================="
+
+apt purge -y pollinate
+
+echo "======================="
+echo "Removed pollinate entropy-as-a-service"
+echo "======================="

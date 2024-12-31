@@ -147,28 +147,28 @@ function build () {
 # Too old for the agent to run, but convenient to have for testing
 if [ $(echo $images | grep -c "ubuntu:16.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:16.04/ubuntu-16.04-${datestamp}.qcow2"
-    build ${output} xenial "-" "apparmor utilities debian-old-extras ubuntu"
+    build ${output} xenial "-" "apparmor utilities debian-old-extras ubuntu ubuntu-remove-pollinate"
 fi
 
 # Images containing the agent
 if [ $(echo $images | grep -c "ubuntu:18.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
-    build ${output} bionic "-" "apparmor utilities debian-old-extras ubuntu" shakenfist-agent
+    build ${output} bionic "-" "apparmor utilities debian-old-extras ubuntu ubuntu-remove-pollinate" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
-    build ${output} focal 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware" shakenfist-agent
+    build ${output} focal 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "ubuntu:22.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:22.04/ubuntu-22.04-sfagent-${datestamp}.qcow2"
-    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware" shakenfist-agent
+    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "ubuntu:24.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:24.04/ubuntu-24.04-sfagent-${datestamp}.qcow2"
-    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware" shakenfist-agent
+    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then

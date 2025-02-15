@@ -85,7 +85,14 @@ function build () {
     outdir=$(dirname ${output})
     mkdir -p ${outdir}
 
-    echo "${3}"
+    echo "OS release: ${2}"
+    if [ $(echo "${2}" | egrep -c "(jessie|stretch|buster)" || true) -gt 0 ]; then
+	echo "Debian release which is ancient, overriding the apt mirror."
+	export DIB_DISTRIBUTION_MIRROR="https://archive.debian.org/debian"
+	export DIB_APT_KEYRING=$(pwd)"/debian-release-${2}.gpg"
+    fi
+
+    echo "Python version: ${3}"
     if [ "${3}" == "-" ]; then
         unset DIB_PYTHON_VERSION
     else
@@ -169,6 +176,16 @@ fi
 if [ $(echo $images | grep -c "ubuntu:24.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:24.04/ubuntu-24.04-sfagent-${datestamp}.qcow2"
     build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian:8") -gt 0 ]; then
+    output="/srv/sf-images/output/debian:8/debian-8-${datestamp}.qcow2"
+    build ${output} jessie 3 "apparmor utilities debian-old-extras debian debian-systemd"
+fi
+
+if [ $(echo $images | grep -c "debian:9") -gt 0 ]; then
+    output="/srv/sf-images/output/debian:9/debian-9-${datestamp}.qcow2"
+    build ${output} stretch 3 "apparmor utilities debian-old-extras debian debian-systemd"
 fi
 
 if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then

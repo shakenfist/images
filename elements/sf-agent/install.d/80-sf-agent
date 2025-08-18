@@ -4,44 +4,91 @@ echo "==================="
 echo "Setting up sf-agent"
 echo "==================="
 
+. /etc/os-release
+
+echo
+echo "/etc/os-release says:"
+cat /etc/os-release
+echo
+
 if [ $(echo "buster,xenial,bionic" | grep -c "${DIB_RELEASE}") -gt 0 ]; then
      # The packaged version of psutil on Debian 10 is so old we have to
      # compile our own.
+     echo "Old debian release found, installing extra compilation packages."
      apt-get install -y build-essential python3-dev
 fi
 
-if [ $(echo "9-stream" | grep -c "${DIB_RELEASE}") -lt 1 ]; then
-     # centos:9-stream doesn't have python3-virtualenv and python3-wheel
-     if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
-         apt-get install -y python3-virtualenv python3-wheel
-     else
-	 yum install -y python3-virtualenv python3-wheel
-     fi
+if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
+     echo "Installking Debian variant of virtualenv packages."
+     apt-get install -y python3-virtualenv python3-wheel
+elif [ $(echo "centos:9-stream,centos:10-stream,rocky:9,rocky:10" | grep -c "${DISTRO_NAME}:${DIB_RELEASE}") -lt 1 ]; then
+     # centos:9-stream etc doesn't have python3-virtualenv and python3-wheel
+     yum install -y python3-virtualenv python3-wheel
 fi
 
+if [ "${ID}" == "ubuntu" ]; then
+    # We need to mark click as manually installed so it doesn't get
+    # auto removed.
+    echo "Manually install click for ubuntu to avoid removal."
+    apt-get install python3-click
+fi
+
+echo "Build venv."
 python3 -m virtualenv --system-site-packages /opt/shakenfist
 
 set -x
 if [ ! -e /opt/shakenfist ]; then
+    echo "Failed to build venv."
+
     if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
         # Ubuntu 18.04 and Debian 10 require a different module to build
         # venvs, and some additional packages.
+	echo "Installing packages for older Debian variants."
         apt-get install -y python3-venv python3-dev python3-pip
     fi
 
     # Now try with venv
+    echo "Retry venv build."
     python3 -m venv --system-site-packages /opt/shakenfist
-
-    # This odd pip invocation is because older Ubuntu's sometimes
-    # doesn't create a pip symlink in the venv. So, we use the module
-    # to install a newer pip. The version pin is because pip 21+
-    # doesn't support python 3.5, and we're in ancient python land
-    # here.
-    /opt/shakenfist/bin/python -m pip install -U "pip<21.0"
 fi
 
+if [ ! -e /opt/shakenfist ]; then
+    echo
+    echo "venv still missing after attempted recovery!"
+    echo
+    exit 1
+fi
+
+if [ ! -e /opt/shakenfist/bin/pip]; then
+    echo "Handling missing pip command in venv."
+    if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
+        # This odd pip invocation is because older Ubuntu's sometimes
+        # doesn't create a pip symlink in the venv. So, we use the module
+        # to install a newer pip. The version pin is because pip 21+
+        # doesn't support python 3.5, and we're in ancient python land
+        # here.
+	echo "Force installing pip"
+        /opt/shakenfist/bin/python -m pip install -U "pip<21.0"
+    fi
+fi
+
+if [ ! -e /opt/shakenfist/bin/pip]; then
+    echo
+    echo "pip still missing after attempted recovery!"
+    echo
+    exit 1
+fi
+
+/opt/shakenfist/bin/pip install -U pip
 DIB_SF_AGENT_PACKAGE=${DIB_SF_AGENT_PACKAGE:-shakenfist-agent}
 /opt/shakenfist/bin/pip install ${DIB_SF_AGENT_PACKAGE}
+
+if [ ! -e /opt/shakenfist/bin/sf-agent ]; then
+    echo
+    echo "FAILURE: sf-agent is missing!"
+    echo
+    exit 1
+fi
 
 cat - > /etc/systemd/system/sf-agent.service << EOF
 [Unit]
@@ -54,6 +101,7 @@ User=root
 Group=root
 
 ExecStart=/bin/sh -c '/opt/shakenfist/bin/sf-agent daemon run'
+StandardOutput=journal+console
 
 Restart=on-failure
 RestartSec=5

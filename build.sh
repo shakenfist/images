@@ -3,13 +3,13 @@
 # Obsolete image builds (not built by default, but still here just in case):
 #   centos:7 centos:8-stream
 #   debian:10
-#   fedora:34 fedora:38 fedora:39
+#   fedora:34 fedora:38 fedora:39 fedora:40
 #   ubuntu:16.04 ubuntu:18.04
 
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 fedora:40 fedora:41 rocky:8 rocky:9"
+    images="ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 fedora:41 fedora:42 rocky:8 rocky:9 rocky:10"
 fi
 
 echo "I will build the following images: ${images}"
@@ -19,7 +19,7 @@ echo
 apt-get update
 apt-get dist-upgrade -y
 apt-get install -y git python3 python3-dev python3-pip python3-wheel rsync xz-utils podman
-pip3 install bindep
+pip3 install --break-system-packages bindep
 
 # We have to install diskimage-builder this way because the Ubuntu dependancies
 # are wrong for the packaged version.
@@ -71,6 +71,7 @@ function build () {
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0
     export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"
     export DIB_CLOUD_INIT_ETC_HOSTS=1
+    export DIB_CLOUD_INIT_GROWPART_DEVICES="/dev/vda3"
     export DIB_GRUB_TIMEOUT=0
     export DIB_IMAGE_CACHE="/srv/sf-images/cache"
 
@@ -78,7 +79,7 @@ function build () {
     # graphical consoles if you choose to install one later...
     export DIB_BOOTLOADER_DEFAULT_CMDLINE="earlyprintk=ttyS0,115200 consoleblank=0"
 
-    export build_args="cloud-init cloud-init-datasources sf-agent block-device-efi vm"
+    export build_args="cloud-init cloud-init-datasources cloud-init-growpart block-device-efi vm"
 
     cwd=$(pwd)
     output=$1
@@ -86,10 +87,13 @@ function build () {
     mkdir -p ${outdir}
 
     echo "OS release: ${2}"
+    export DIB_APT_OPTIONS=""
     if [ $(echo "${2}" | egrep -c "(jessie|stretch|buster)" || true) -gt 0 ]; then
 	echo "Debian release which is ancient, overriding the apt mirror."
-	export DIB_DISTRIBUTION_MIRROR="https://archive.debian.org/debian"
-	export DIB_APT_KEYRING=$(pwd)"/debian-release-${2}.gpg"
+	export DIB_DISTRIBUTION_MIRROR="https://deb.freexian.com/extended-lts"
+	export DIB_APT_SOURCES_CONF="default:deb https://deb.freexian.com/extended-lts ${2} main contrib non-free
+lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
+	export DIB_APT_KEYRING=$(pwd)"/debian-release-freexian.gpg"
     fi
 
     echo "Python version: ${3}"
@@ -99,9 +103,15 @@ function build () {
         export DIB_PYTHON_VERSION=$3
     fi
 
+    echo "Shakenfist agent package: ${5}"
+    if [ ! -z ${5} ]; then
+	export DIB_SF_AGENT_PACKAGE="${5}"
+	export build_args="${build_args} sf-agent"
+    fi
+
     set -x
     # Build an uncompressed image first
-    DIB_RELEASE=$2 DIB_SF_AGENT_PACKAGE=$5 /usr/local/bin/disk-image-create $4 ${build_args} -u -o temp.qcow2 | tee ${output}.log
+    DIB_RELEASE=$2 /usr/local/bin/disk-image-create $4 ${build_args} -u -o temp.qcow2 | tee ${output}.log
 
     # If we detected a checksum failure, clear the cache. This seems common with
     # upstream Ubuntu images for some reason.
@@ -198,10 +208,14 @@ if [ $(echo $images | grep -c "debian:11") -gt 0 ]; then
     build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd" shakenfist-agent
 fi
 
-
 if [ $(echo $images | grep -c "debian:12") -gt 0 ]; then
     output="/srv/sf-images/output/debian:12/debian-12-sfagent-${datestamp}.qcow2"
     build ${output} bookworm 3 "apparmor utilities debian-12-extras debian debian-systemd" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian:13") -gt 0 ]; then
+    output="/srv/sf-images/output/debian:13/debian-13-sfagent-${datestamp}.qcow2"
+    build ${output} trixie 3 "apparmor utilities debian-12-extras debian debian-systemd" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then
@@ -244,6 +258,11 @@ if [ $(echo $images | grep -c "fedora:41") -gt 0 ]; then
     build ${output} 41 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
+if [ $(echo $images | grep -c "fedora:42") -gt 0 ]; then
+    output="/srv/sf-images/output/fedora:42/fedora-42-sfagent-${datestamp}.qcow2"
+    build ${output} 42 "-" "fedora rhel-extras" shakenfist-agent
+fi
+
 if [ $(echo $images | grep -c "rocky:8") -gt 0 ]; then
     output="/srv/sf-images/output/rocky:8/rocky-8-sfagent-${datestamp}.qcow2"
     build ${output} 8 "-" "rocky-container rhel-extras" shakenfist-agent
@@ -252,6 +271,11 @@ fi
 if [ $(echo $images | grep -c "rocky:9") -gt 0 ]; then
     output="/srv/sf-images/output/rocky:9/rocky-9-sfagent-${datestamp}.qcow2"
     build ${output} 9 "-" "rocky-container rhel-extras" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "rocky:10") -gt 0 ]; then
+    output="/srv/sf-images/output/rocky:10/rocky-10-sfagent-${datestamp}.qcow2"
+    build ${output} 10 "-" "rocky-container rhel-extras" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-docker:11") -gt 0 ]; then

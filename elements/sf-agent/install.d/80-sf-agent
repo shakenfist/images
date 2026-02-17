@@ -59,7 +59,7 @@ if [ ! -e /opt/shakenfist ]; then
     exit 1
 fi
 
-if [ ! -e /opt/shakenfist/bin/pip]; then
+if [ ! -e /opt/shakenfist/bin/pip ]; then
     echo "Handling missing pip command in venv."
     if [ $(echo "ubuntu,debian" | grep -c "${DISTRO_NAME}") -gt 0 ]; then
         # This odd pip invocation is because older Ubuntu's sometimes
@@ -72,7 +72,7 @@ if [ ! -e /opt/shakenfist/bin/pip]; then
     fi
 fi
 
-if [ ! -e /opt/shakenfist/bin/pip]; then
+if [ ! -e /opt/shakenfist/bin/pip ]; then
     echo
     echo "pip still missing after attempted recovery!"
     echo

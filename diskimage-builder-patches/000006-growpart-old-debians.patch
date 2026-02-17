@@ -1,0 +1,17 @@
+diff --git a/diskimage_builder/elements/cloud-init-growpart/pkg-map b/diskimage_builder/elements/cloud-init-growpart/pkg-map
+index 4bfbc20e..d9e913eb 100644
+--- a/diskimage_builder/elements/cloud-init-growpart/pkg-map
++++ b/diskimage_builder/elements/cloud-init-growpart/pkg-map
+@@ -6,5 +6,12 @@
+     "debian": {
+       "growpart_package": "cloud-guest-utils"
+     }
++  },
++  "release": {
++    "debian": {
++      "jessie": {
++        "growpart_package": "cloud-utils"
++      }
++    }
+   }
+ }

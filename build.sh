@@ -9,7 +9,7 @@
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 fedora:41 fedora:42 rocky:8 rocky:9 rocky:10"
+    images="ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 debian:13 debian-docker:13 debian-gnome:13 debian-xfce:13 rocky:8 rocky:9 rocky:10 fedora:41 fedora:42 fedora:43"
 fi
 
 echo "I will build the following images: ${images}"
@@ -185,7 +185,7 @@ fi
 
 if [ $(echo $images | grep -c "ubuntu:24.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:24.04/ubuntu-24.04-sfagent-${datestamp}.qcow2"
-    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
+    build ${output} noble 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian:8") -gt 0 ]; then
@@ -263,6 +263,11 @@ if [ $(echo $images | grep -c "fedora:42") -gt 0 ]; then
     build ${output} 42 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
+if [ $(echo $images | grep -c "fedora:43") -gt 0 ]; then
+    output="/srv/sf-images/output/fedora:43/fedora-43-sfagent-${datestamp}.qcow2"
+    build ${output} 43 "-" "fedora rhel-extras" shakenfist-agent
+fi
+
 if [ $(echo $images | grep -c "rocky:8") -gt 0 ]; then
     output="/srv/sf-images/output/rocky:8/rocky-8-sfagent-${datestamp}.qcow2"
     build ${output} 8 "-" "rocky-container rhel-extras" shakenfist-agent
@@ -288,6 +293,44 @@ if [ $(echo $images | grep -c "debian-docker:12") -gt 0 ]; then
     build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras docker-host" shakenfist-agent
 fi
 
+if [ $(echo $images | grep -c "debian-docker:13") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-docker:13/debian-13-docker-sfagent-${datestamp}.qcow2"
+    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-12-extras docker-host" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-gnome:11") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-gnome:11/debian-11-gnome-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd gnome-desktop" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-gnome:12") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-gnome:12/debian-12-gnome-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-gnome:13") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-gnome:13/debian-13-gnome-sfagent-${datestamp}.qcow2"
+    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-xfce:11") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-xfce:11/debian-11-xfce-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd xfce-desktop" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-xfce:12") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-xfce:12/debian-12-xfce-sfagent-${datestamp}.qcow2"
+    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
+fi
+
+if [ $(echo $images | grep -c "debian-xfce:13") -gt 0 ]; then
+    output="/srv/sf-images/output/debian-xfce:13/debian-13-xfce-sfagent-${datestamp}.qcow2"
+    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
+fi
+
+# And done
+echo
+echo "Complete"
 if [ $(echo $images | grep -c "debian-gnome:11") -gt 0 ]; then
     output="/srv/sf-images/output/debian-gnome:11/debian-11-gnome-sfagent-${datestamp}.qcow2"
     build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd gnome-desktop" shakenfist-agent

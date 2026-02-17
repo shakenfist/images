@@ -1,0 +1,40 @@
+commit b6323458a9e4a0b584fb5a23bc3e0814788247e2
+Author: Michael Still <mikal@stillhq.com>
+Date:   Wed Sep 10 13:27:43 2025 +1000
+
+    Automatically accept "dnf mark" commands.
+    
+    diskimage-builder is failing on my fedora 41 and 42 builds with errors
+    like this:
+    
+    2025-09-10 02:13:46.792 | > + dnf mark user tcpdump [...snip...]
+    [...snip...]
+    2025-09-10 02:57:54.213 | > Transaction Summary:
+    2025-09-10 02:57:54.213 | >  Changing reason:   14 packages
+    2025-09-10 02:57:54.213 | >
+    2025-09-10 02:57:54.213 | > After this operation, 0 B extra will be used (install 0 B, remove 0 B).
+    2025-09-10 02:57:54.213 | > Is this ok [y/N]: Operation aborted by the user.
+    2025-09-10 02:57:54.213 | returncode: 1
+    2025-09-10 02:57:54.213 | install-packages failed with returncode 1
+    
+    If we sprinkle in some -y goodness, then my builds work.
+    
+    Change-Id: I74278bce29e00a1bf1768447622d95728bd8fa41
+    Signed-off-by: Michael Still <mikal@stillhq.com>
+
+diff --git a/diskimage_builder/elements/yum/bin/install-packages b/diskimage_builder/elements/yum/bin/install-packages
+index 2fe753fe..02cf4e9c 100755
+--- a/diskimage_builder/elements/yum/bin/install-packages
++++ b/diskimage_builder/elements/yum/bin/install-packages
+@@ -146,9 +146,9 @@ if [ -n "$WHITELIST" ]; then
+ 
+     if [ "$ACTION" == "install" ]; then
+         if [ ${YUM} == "dnf" ] && [ -z "$DNF5" ]; then
+-            dnf mark install $PKGS
++            dnf -y mark install $PKGS
+         elif [ ${YUM} == "dnf" ] && [ -n "$DNF5" ]; then
+-            dnf mark user $PKGS
++            dnf -y mark user $PKGS
+         fi
+     fi
+     $_xtrace

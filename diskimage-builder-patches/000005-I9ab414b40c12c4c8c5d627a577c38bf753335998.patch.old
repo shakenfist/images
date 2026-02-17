@@ -1,0 +1,55 @@
+From ee883a6cb7519e0eadec72f177b547dfe75c3d79 Mon Sep 17 00:00:00 2001
+From: Dmitriy Rabotyagov <dmitriy.rabotyagov@cleura.com>
+Date: Thu, 7 Nov 2024 16:31:22 +0100
+Subject: [PATCH] Add support for DNF5-based systems
+
+DNF5 has removed[1] verbose flag resulting in builds of distros
+to fail for distros where dnf5 is being used.
+Ie Fedora 41 does use dnf5 out of the box.
+
+It also does not have "mark install" subcommand [2]
+
+[1] https://github.com/rpm-software-management/dnf5/issues/464
+[2] https://dnf5.readthedocs.io/en/latest/commands/mark.8.html
+
+Change-Id: I9ab414b40c12c4c8c5d627a577c38bf753335998
+---
+ diskimage_builder/elements/yum/bin/install-packages | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/diskimage_builder/elements/yum/bin/install-packages b/diskimage_builder/elements/yum/bin/install-packages
+index 1c0a0219a..8f6cd4b25 100755
+--- a/diskimage_builder/elements/yum/bin/install-packages
++++ b/diskimage_builder/elements/yum/bin/install-packages
+@@ -26,6 +26,7 @@ MAP_ELEMENT=
+ 
+ # allow override for dnf, as shipped by default with >=F22
+ YUM=${YUM:-yum}
++YUM_FLAGS=${YUM_FLAGS:--y -v}
+ 
+ # save global xtrace state
+ _xtrace=$(set +o | grep xtrace)
+@@ -134,10 +135,18 @@ if [ -n "$WHITELIST" ]; then
+     #
+     # [1] https://bugzilla.redhat.com/show_bug.cgi?id=965567
+     set -o xtrace
+-    ${YUM} -v -y $ACTION $EXTRA_ARGS $PKGS
++
++    DNF5=$(command -v dnf5 2>/dev/null || true)
++    if [ ${YUM} == 'dnf' ] && [ -n "$DNF5" ]; then
++        # dnf5 does not support debug flag
++        YUM_FLAGS=${YUM_FLAGS//-v}
++    fi
++
++    ${YUM} $YUM_FLAGS $ACTION $EXTRA_ARGS $PKGS
+ 
+     if [ "$ACTION" == "install" ]; then
+-        if [ ${YUM} == "dnf" ]; then
++        # dnf5 does not support "mark install"
++        if [ ${YUM} == "dnf" ] && [ -z "$DNF5" ]; then
+             # Make sure dnf won't autoremove these packages
+             dnf mark install $PKGS
+         fi
+-- 
+2.30.2
+

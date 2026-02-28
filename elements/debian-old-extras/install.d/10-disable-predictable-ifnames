@@ -1,6 +1,0 @@
-#!/bin/bash
-set -eu
-set -o pipefail
-
-# Mask the udev rule that renames interfaces
-ln -sf /dev/null /etc/udev/rules.d/80-net-setup-link.rules

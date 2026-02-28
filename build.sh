@@ -77,7 +77,7 @@ function build () {
 
     # Note the default here is "nofb nomodeset gfxpayload=text" which breaks
     # graphical consoles if you choose to install one later...
-    export DIB_BOOTLOADER_DEFAULT_CMDLINE="earlyprintk=ttyS0,115200 consoleblank=0"
+    export DIB_BOOTLOADER_DEFAULT_CMDLINE="net.ifnames=0 biosdevname=0 earlyprintk=ttyS0,115200 consoleblank=0"
 
     export build_args="cloud-init cloud-init-datasources cloud-init-growpart block-device-efi vm"
 

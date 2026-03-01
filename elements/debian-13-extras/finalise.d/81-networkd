@@ -1,0 +1,16 @@
+#!/bin/bash
+
+echo "=============================="
+echo "Setting up systemd-networkd"
+echo "=============================="
+
+# Debian 13 (trixie) dropped ifupdown from the default install.
+# Cloud-init detects this and uses the systemd-networkd renderer,
+# writing config to /etc/systemd/network/. But systemd-networkd is
+# not enabled by default, so the config is never applied. Enable it
+# so that cloud-init's network configuration actually takes effect.
+systemctl enable systemd-networkd
+
+echo "=========================="
+echo "Set up systemd-networkd"
+echo "=========================="

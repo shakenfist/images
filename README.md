@@ -10,9 +10,11 @@ built daily and published to `images.shakenfist.com`.
 
 Custom diskimage-builder elements are in the `elements/` directory:
 
-- **debian-12-extras** - Extras for Debian 12+ (bookworm, trixie).
-  Disables predictable network interface naming and configures
-  systemd-resolved.
+- **debian-13-extras** - Extras for Debian 13+ (trixie). Depends on
+  debian-12-extras and enables systemd-networkd, which Debian 13
+  requires because ifupdown is no longer installed by default.
+- **debian-12-extras** - Extras for Debian 12 (bookworm). Configures
+  systemd-resolved and installs lshw and pciutils.
 - **debian-old-extras** - Extras for older Debian and Ubuntu releases
   (including Ubuntu 20.04, 22.04, 24.04 and Debian 11). Disables
   predictable network interface naming and installs resolvconf,
@@ -27,14 +29,10 @@ Custom diskimage-builder elements are in the `elements/` directory:
 
 ## Network Interface Naming
 
-All images disable systemd's predictable network interface naming by
-masking the udev rule `80-net-setup-link.rules`. This ensures
-interfaces are named `eth0`, `eth1`, etc., which is required by
-downstream tooling such as Kolla-Ansible.
-
-The masking is done via
-`elements/*/install.d/10-disable-predictable-ifnames` scripts in
-both `debian-12-extras` and `debian-old-extras`.
+All images disable systemd's predictable network interface naming
+via kernel command line parameters (`net.ifnames=0 biosdevname=0`).
+This ensures interfaces are named `eth0`, `eth1`, etc., which is
+required by downstream tooling such as Kolla-Ansible.
 
 ## Building Images
 

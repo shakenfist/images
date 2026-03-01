@@ -215,7 +215,7 @@ fi
 
 if [ $(echo $images | grep -c "debian:13") -gt 0 ]; then
     output="/srv/sf-images/output/debian:13/debian-13-sfagent-${datestamp}.qcow2"
-    build ${output} trixie 3 "apparmor utilities debian-12-extras debian debian-systemd" shakenfist-agent
+    build ${output} trixie 3 "apparmor utilities debian-13-extras debian debian-systemd" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then
@@ -295,7 +295,7 @@ fi
 
 if [ $(echo $images | grep -c "debian-docker:13") -gt 0 ]; then
     output="/srv/sf-images/output/debian-docker:13/debian-13-docker-sfagent-${datestamp}.qcow2"
-    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-12-extras docker-host" shakenfist-agent
+    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras docker-host" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-gnome:11") -gt 0 ]; then
@@ -310,7 +310,7 @@ fi
 
 if [ $(echo $images | grep -c "debian-gnome:13") -gt 0 ]; then
     output="/srv/sf-images/output/debian-gnome:13/debian-13-gnome-sfagent-${datestamp}.qcow2"
-    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
+    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras gnome-desktop" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-xfce:11") -gt 0 ]; then
@@ -325,7 +325,7 @@ fi
 
 if [ $(echo $images | grep -c "debian-xfce:13") -gt 0 ]; then
     output="/srv/sf-images/output/debian-xfce:13/debian-13-xfce-sfagent-${datestamp}.qcow2"
-    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
+    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras xfce-desktop" shakenfist-agent
 fi
 
 # And done

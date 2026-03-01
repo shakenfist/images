@@ -24,15 +24,17 @@ Scripts must be executable and are run in sort order by filename.
 
 ## Element Groups
 
-Images use one of two "extras" elements depending on distro age:
+Images use one of three "extras" elements depending on distro age:
 
-- **debian-12-extras**: Debian 12+. Disables predictable interface
-  naming and configures systemd-resolved.
-- **debian-old-extras**: Ubuntu 20.04-24.04 and Debian 11. Disables
-  predictable interface naming and installs legacy networking tools.
-
-Both elements mask `/etc/udev/rules.d/80-net-setup-link.rules` to
-ensure simple interface naming (`eth0`, `eth1`, etc.).
+- **debian-13-extras**: Debian 13 (trixie). Depends on
+  debian-12-extras and additionally enables systemd-networkd.
+  Debian 13 dropped ifupdown from the default install, so
+  cloud-init uses the systemd-networkd renderer and this service
+  must be enabled for network configuration to take effect.
+- **debian-12-extras**: Debian 12 (bookworm). Configures
+  systemd-resolved and installs lshw and pciutils.
+- **debian-old-extras**: Ubuntu 20.04-24.04 and Debian 11.
+  Installs legacy networking tools (resolvconf, lshw, pciutils).
 
 ## Key Build Variables
 

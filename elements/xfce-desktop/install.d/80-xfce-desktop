@@ -1,0 +1,54 @@
+#!/bin/bash
+
+echo "==================="
+echo "Setting up xfce-desktop"
+echo "==================="
+
+# Ensure the debian user exists with a home directory
+if ! id -u debian > /dev/null 2>&1; then
+    echo "Creating debian user"
+    useradd -m -s /bin/bash debian
+fi
+
+# Configure lightdm for automatic login
+mkdir -p /etc/lightdm/lightdm.conf.d
+cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << 'EOF'
+[Seat:*]
+autologin-user=debian
+autologin-user-timeout=0
+EOF
+
+# Disable xfce4-screensaver and screen lock via system-wide xfconf defaults
+mkdir -p /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+
+cat > /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-screensaver.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-screensaver" version="1.0">
+  <property name="saver" type="empty">
+    <property name="enabled" type="bool" value="false"/>
+  </property>
+  <property name="lock" type="empty">
+    <property name="enabled" type="bool" value="false"/>
+  </property>
+</channel>
+EOF
+
+# Disable DPMS and screen blanking via xfce4-power-manager defaults
+cat > /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-power-manager" version="1.0">
+  <property name="xfce4-power-manager" type="empty">
+    <property name="dpms-enabled" type="bool" value="false"/>
+    <property name="blank-on-ac" type="int" value="0"/>
+    <property name="dpms-on-ac-sleep" type="int" value="0"/>
+    <property name="dpms-on-ac-off" type="int" value="0"/>
+    <property name="blank-on-battery" type="int" value="0"/>
+    <property name="dpms-on-battery-sleep" type="int" value="0"/>
+    <property name="dpms-on-battery-off" type="int" value="0"/>
+  </property>
+</channel>
+EOF
+
+echo "==================="
+echo "Set up xfce-desktop"
+echo "==================="

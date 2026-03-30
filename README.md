@@ -22,6 +22,9 @@ Custom diskimage-builder elements are in the `elements/` directory:
 - **sf-agent** - Installs the Shaken Fist agent package.
 - **docker-host** - Installs Docker for desktop images.
 - **gnome-desktop** / **xfce-desktop** - Desktop environment elements.
+  These create a `debian` user, enable auto-login via the display
+  manager (gdm3 / lightdm), and disable the screen saver and lock
+  screen so graphical sessions start unattended.
 - **ubuntu-remove-snap** / **ubuntu-remove-firmware** /
   **ubuntu-remove-pollinate** - Remove unnecessary Ubuntu packages.
 - **rhel-extras** - Extras for RHEL-based distros (CentOS, Rocky,

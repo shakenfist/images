@@ -36,6 +36,21 @@ Images use one of three "extras" elements depending on distro age:
 - **debian-old-extras**: Ubuntu 20.04-24.04 and Debian 11.
   Installs legacy networking tools (resolvconf, lshw, pciutils).
 
+## Desktop Elements
+
+The **gnome-desktop** and **xfce-desktop** elements install a full
+graphical environment and configure it for unattended use:
+
+1. A `debian` user is created if it does not already exist
+2. The display manager is configured for automatic login:
+   - GNOME: gdm3 `AutomaticLogin` in `/etc/gdm3/custom.conf`
+   - XFCE: lightdm autologin in `/etc/lightdm/lightdm.conf.d/`
+3. Screen saver and screen lock are disabled:
+   - GNOME: dconf system defaults in `/etc/dconf/db/local.d/`
+   - XFCE: xfconf defaults in `/etc/xdg/xfce4/xfconf/`
+4. DPMS (display power management) is disabled so the screen
+   never blanks
+
 ## Key Build Variables
 
 - `DIB_APT_MINIMAL_CREATE_INTERFACES=0` - Prevents DIB from

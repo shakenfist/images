@@ -4,9 +4,57 @@ echo "==================="
 echo "Setting up gnome-desktop"
 echo "==================="
 
-# We expect the network to be managed by cloud-init, so we
-# really don't want network manager here.
-#apt-get purge network-manager
+# Ensure the debian user exists with a home directory
+if ! id -u debian > /dev/null 2>&1; then
+    echo "Creating debian user"
+    useradd -m -s /bin/bash debian
+fi
+
+# Configure gdm3 for automatic login
+if [ -f /etc/gdm3/custom.conf ]; then
+    sed -i 's/^\[daemon\]/[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=debian/' \
+        /etc/gdm3/custom.conf
+else
+    mkdir -p /etc/gdm3
+    cat > /etc/gdm3/custom.conf << 'EOF'
+[daemon]
+AutomaticLoginEnable=true
+AutomaticLogin=debian
+
+[security]
+
+[xdmcp]
+
+[chooser]
+
+[debug]
+EOF
+fi
+
+# Set up dconf profile for system-wide defaults
+mkdir -p /etc/dconf/profile
+cat > /etc/dconf/profile/user << 'EOF'
+user-db:user
+system-db:local
+EOF
+
+# Disable screen saver, screen lock, and idle timeout via dconf
+mkdir -p /etc/dconf/db/local.d
+cat > /etc/dconf/db/local.d/00-screensaver << 'EOF'
+[org/gnome/desktop/screensaver]
+lock-enabled=false
+idle-activation-enabled=false
+
+[org/gnome/desktop/session]
+idle-delay=uint32 0
+
+[org/gnome/settings-daemon/plugins/power]
+sleep-inactive-ac-type='nothing'
+sleep-inactive-battery-type='nothing'
+EOF
+
+# Compile the dconf database
+dconf update
 
 echo "==================="
 echo "Set up gnome-desktop"

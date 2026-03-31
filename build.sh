@@ -53,6 +53,72 @@ fi
 mkdir -p /srv/sf-images/cache
 datestamp=$(date +%Y%m%d)
 
+function push_log_to_loki() {
+    # Push build log to Loki for centralized monitoring
+    # $1: log file path
+    # $2: image label (e.g., "debian-xfce:12")
+    # $3: build result ("success" or "failure")
+
+    local log_file="$1"
+    local image_label="$2"
+    local build_result="$3"
+
+    if [ ! -f "$log_file" ]; then
+        return 0
+    fi
+
+    echo "Pushing build log to Loki for ${image_label} (${build_result})"
+
+    LOG_FILE="$log_file" IMAGE_LABEL="$image_label" BUILD_RESULT="$build_result" \
+        BUILD_HOST="$(hostname)" python3 << 'PYEOF' || true
+import json, os, time, urllib.request
+
+log_file = os.environ['LOG_FILE']
+image_label = os.environ['IMAGE_LABEL']
+build_result = os.environ['BUILD_RESULT']
+build_host = os.environ.get('BUILD_HOST', 'unknown')
+
+with open(log_file, 'r', errors='replace') as f:
+    lines = f.readlines()
+
+base_ns = int(time.time() * 1e9)
+values = [
+    [str(base_ns + i), line.rstrip('\n')]
+    for i, line in enumerate(lines)
+    if line.strip()
+]
+
+if not values:
+    exit(0)
+
+payload = json.dumps({
+    'streams': [{
+        'stream': {
+            'job': 'image-build',
+            'host': build_host,
+            'image': image_label,
+            'result': build_result,
+        },
+        'values': values,
+    }]
+}).encode()
+
+req = urllib.request.Request(
+    'http://loki.home.stillhq.com:3100/loki/api/v1/push',
+    data=payload,
+    headers={
+        'Content-Type': 'application/json',
+        'X-Scope-OrgID': 'sfyow',
+    },
+)
+try:
+    urllib.request.urlopen(req)
+    print('Pushed %d log lines to Loki for %s' % (len(values), image_label))
+except Exception as e:
+    print('Warning: failed to push logs to Loki: %s' % e)
+PYEOF
+}
+
 function build () {
     # $1: output filename
     # $2: OS release name (bionic, focal, etc)
@@ -122,11 +188,13 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
     # Why is it so hard to detect a DIB failure?
     if [ $? -gt 0 ]; then
         echo "BUILD FAILED."
+        push_log_to_loki "${output}.log" "$(basename ${outdir})" "failure"
         return 1
     fi
 
     if [ $(grep -c "Build completed successfully" ${output}.log) -lt 1 ]; then
         echo "BUILD FAILED"
+        push_log_to_loki "${output}.log" "$(basename ${outdir})" "failure"
         return 1
     fi
     set +x
@@ -158,6 +226,7 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
         echo "Skipping push"
     fi
     cd ${cwd}
+    push_log_to_loki "${output}.log" "$(basename ${outdir})" "success"
     return 0
 }
 

@@ -47,6 +47,18 @@ sudo ./build.sh
 sudo ./build.sh "ubuntu:24.04"
 ```
 
+## Log Forwarding
+
+Build logs are pushed to Loki (`loki.home.stillhq.com`, tenant
+`sfyow`) after each image build completes. Logs are labelled with
+`job=image-build`, the image name, the build host, and success or
+failure status. Query them with:
+
+```bash
+loki-query '{job="image-build"}' --tenant sfyow --since 24h
+loki-query '{job="image-build", image="debian-xfce:12"}' --tenant sfyow --since 7d
+```
+
 ## Patches
 
 The `diskimage-builder-patches/` directory contains patches applied

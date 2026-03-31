@@ -10,7 +10,8 @@ Images are built using OpenStack's
 2. Iterates over requested images
 3. Calls `disk-image-create` with distro-specific elements
 4. Transcodes the output to compressed QCOW2 with 2MB clusters
-5. Publishes to the image repository
+5. Pushes the build log to Loki (sfyow tenant)
+6. Publishes to the image repository
 
 ## Element System
 

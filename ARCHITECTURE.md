@@ -31,14 +31,19 @@ Images use one of three "extras" elements depending on distro age:
   debian-12-extras and additionally enables systemd-networkd.
   Debian 13 dropped ifupdown from the default install, so
   cloud-init uses the systemd-networkd renderer and this service
-  must be enabled for network configuration to take effect. Also
-  masks tmp.mount: trixie defaults /tmp to a tmpfs sized at half
-  of RAM, which is the wrong trade-off for our RAM-constrained,
-  NVMe-backed instances.
+  must be enabled for network configuration to take effect.
 - **debian-12-extras**: Debian 12 (bookworm). Configures
   systemd-resolved and installs lshw and pciutils.
 - **debian-old-extras**: Ubuntu 20.04-24.04 and Debian 11.
   Installs legacy networking tools (resolvconf, lshw, pciutils).
+
+All builds also include the **disk-tmp** element (via the
+`utilities` element on Debian and Ubuntu, and `rhel-extras` on Red
+Hat derived distributions), which masks tmp.mount so /tmp is backed
+by disk rather than a tmpfs. Some distributions (Fedora since 18,
+Debian since trixie) default /tmp to a tmpfs sized at half of RAM,
+which is the wrong trade-off for our RAM-constrained, NVMe-backed
+instances.
 
 ## Desktop Elements
 

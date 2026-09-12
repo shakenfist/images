@@ -8,34 +8,59 @@
 #
 # Retired 2026-09-12 because the release is end of life upstream. The
 # build blocks below are kept so a one-off rebuild is still possible,
-# and the images already published stay on images.shakenfist.com --
-# anything pinned to them keeps working, they simply stop being
+# and what is already published stays on images.shakenfist.com --
+# anything pinned to it keeps working, it simply stops being
 # refreshed.
 #   ubuntu:20.04  EOL 2025-05-31
 #   fedora:41     EOL 2025-11
 #   fedora:42     EOL 2026-06
+#   debian:11, and its -docker, -gnome and -xfce variants. Bullseye
+#                 LTS ended 2026-08-31 and the security suite's
+#                 Release file expired on 2026-09-08, so these can no
+#                 longer be built at all: apt refuses the expired
+#                 repository and the build stops there. This is not a
+#                 policy choice we could reverse by editing the list.
 #
-# fedora:43 is not end of life (upstream supports it until about
-# 2026-12) but was superseded by fedora:44 and is no longer built.
+# No Fedora is built at all, which is not a policy choice either.
+# fedora:43 and fedora:44 have never built, both dying the same way:
+# their python is new enough that grpcio-tools has no wheel, so pip
+# falls back to compiling it and the image carries no C++ compiler.
+# Loki has fedora:43 failing that way as far back as 2026-08-14 and
+# no successful build ever. The newest Fedora that does build is
+# fedora:42, which is end of life, so there is no supported Fedora we
+# can currently produce.
 #
-# Still built although end of life, because something still consumes
-# them and retiring one is a coordinated change rather than an edit
-# here. Dropping an image from this list does not unpublish it --
-# whatever is already on images.shakenfist.com stays, and consumers
-# keep working against a frozen copy -- but it does mean that copy
-# stops receiving security updates, which for these two is not yet an
-# acceptable answer:
-#   debian:11  private-ci builds its "dependencies" cache disk from
-#              this image, and that disk gates ALL CI provisioning.
-#              Retire once private-ci moves it to debian:13.
-#   debian:12  sixteen repositories still run CI on debian-12 runner
-#              labels, which private-ci bakes from this image. Retire
-#              as the eol-distro audit issues are closed.
+# Fixing this means teaching sf-agent to install a compiler for the
+# RHEL family and remove it again afterwards -- the element already
+# does the equivalent for old Debian releases, installing
+# build-essential and python3-dev -- or waiting for grpcio to publish
+# wheels. Until then, putting fedora:43 or fedora:44 in the list above
+# only manufactures a nightly failure, which is the noise that hid a
+# sixteen day outage.
+#
+# debian:12 is past standard security support (2026-06-10) and is
+# still built deliberately. private-ci bakes the debian-12 runner
+# labels that sixteen repositories boot on from it, and Debian LTS
+# covers bookworm until 2028. Retire it as the eol-distro audit
+# issues are closed, not before.
+#
+# Two things elsewhere need doing as a result of the above, and
+# neither can be done in this repository:
+#   * private-ci builds its "dependencies" cache disk from debian:11,
+#     and its own comment says a missing dependencies label blocks ALL
+#     CI provisioning. That base can no longer be rebuilt, so moving
+#     it to debian:13 is now the thing standing between us and an
+#     unrecoverable CI outage.
+#   * the debian-docker:12, debian-gnome:12 and debian-xfce:12 images
+#     were built from bullseye rather than bookworm until 2026-09-12.
+#     Anything baked from them before that date -- the debian-12-docker
+#     and debian-gnome-12 runner labels especially -- is Debian 11 and
+#     needs rebuilding.
 
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 debian:13 debian-docker:13 debian-gnome:13 debian-xfce:13 rocky:8 rocky:9 rocky:10 fedora:44"
+    images="ubuntu:22.04 ubuntu:24.04 centos:9-stream debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 debian:13 debian-docker:13 debian-gnome:13 debian-xfce:13 rocky:8 rocky:9 rocky:10"
 fi
 
 echo "I will build the following images: ${images}"
@@ -399,7 +424,7 @@ fi
 
 if [ $(echo $images | grep -c "debian-docker:12") -gt 0 ]; then
     output="/srv/sf-images/output/debian-docker:12/debian-12-docker-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras docker-host" shakenfist-agent
+    build ${output} bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras docker-host" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-docker:13") -gt 0 ]; then
@@ -414,7 +439,7 @@ fi
 
 if [ $(echo $images | grep -c "debian-gnome:12") -gt 0 ]; then
     output="/srv/sf-images/output/debian-gnome:12/debian-12-gnome-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
+    build ${output} bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-gnome:13") -gt 0 ]; then
@@ -429,7 +454,7 @@ fi
 
 if [ $(echo $images | grep -c "debian-xfce:12") -gt 0 ]; then
     output="/srv/sf-images/output/debian-xfce:12/debian-12-xfce-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
+    build ${output} bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
 fi
 
 if [ $(echo $images | grep -c "debian-xfce:13") -gt 0 ]; then

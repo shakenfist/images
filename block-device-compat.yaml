@@ -1,0 +1,59 @@
+# Block device layout for every image we build.
+#
+# This is diskimage-builder's own block-device-efi default, copied
+# here so that one thing can be added to it: mkfs options for the root
+# filesystem. DIB_BLOCK_DEVICE_CONFIG in build.sh points at this file.
+#
+# Why it exists. e2fsprogs 1.47 turned on "orphan_file" and
+# "metadata_csum_seed" by default, and sfyow runs Debian 13, so
+# mke2fs on the build host now creates ext4 filesystems carrying both
+# features. grub only learned to read them in 2.12. The grub that
+# runs "grub-install" is the *guest's* grub, inside the chroot, so
+# every image whose release ships grub older than 2.12 -- Ubuntu
+# 20.04 and 22.04, Debian 11 and 12, and the RHEL derivatives -- died
+# with "grub-install: error: unknown filesystem" the moment the build
+# host was upgraded. Debian 13 images kept working, which is why the
+# breakage looked like it was about end of life releases when it was
+# really about the host.
+#
+# Turning both features off costs a small amount of fsck and
+# journalling performance in the guest and nothing else, so it is
+# applied to every image rather than only the old ones: one code path
+# is easier to reason about than a conditional, and a Debian 13 image
+# does not care.
+#
+# The rest of this file must stay in step with upstream's
+# block-device-efi/block-device-default.yaml. It is checked against
+# the copy in the DIB checkout by tools/check-block-device-config.sh.
+
+- local_loop:
+    name: image0
+
+- partitioning:
+    base: image0
+    label: gpt
+    partitions:
+      - name: ESP
+        type: 'EF00'
+        size: 550MiB
+        mkfs:
+          type: vfat
+          mount:
+            mount_point: /boot/efi
+            fstab:
+              options: "defaults"
+              fsck-passno: 2
+      - name: BSP
+        type: 'EF02'
+        size: 8MiB
+      - name: root
+        type: '8300'
+        size: 100%
+        mkfs:
+          type: ext4
+          opts: "-O ^orphan_file,^metadata_csum_seed"
+          mount:
+            mount_point: /
+            fstab:
+              options: "defaults"
+              fsck-passno: 1

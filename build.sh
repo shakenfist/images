@@ -174,6 +174,15 @@ function build () {
     export build_args="cloud-init cloud-init-datasources cloud-init-growpart block-device-efi vm"
 
     cwd=$(pwd)
+
+    # Root filesystem features the guest's grub has to be able to read.
+    # See the header of block-device-compat.yaml: without this every
+    # image whose release ships grub older than 2.12 fails with
+    # "grub-install: error: unknown filesystem". The path is absolute
+    # because disk-image-create runs from elsewhere, and this is
+    # deliberately not exported once at the top of the script -- ${cwd}
+    # is only known inside build().
+    export DIB_BLOCK_DEVICE_CONFIG="file://${cwd}/block-device-compat.yaml"
     output=$1
     outdir=$(dirname ${output})
     mkdir -p ${outdir}

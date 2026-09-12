@@ -5,11 +5,37 @@
 #   debian:10
 #   fedora:34 fedora:38 fedora:39 fedora:40
 #   ubuntu:16.04 ubuntu:18.04
+#
+# Retired 2026-09-12 because the release is end of life upstream. The
+# build blocks below are kept so a one-off rebuild is still possible,
+# and the images already published stay on images.shakenfist.com --
+# anything pinned to them keeps working, they simply stop being
+# refreshed.
+#   ubuntu:20.04  EOL 2025-05-31
+#   fedora:41     EOL 2025-11
+#   fedora:42     EOL 2026-06
+#
+# fedora:43 is not end of life (upstream supports it until about
+# 2026-12) but was superseded by fedora:44 and is no longer built.
+#
+# Still built although end of life, because something still consumes
+# them and retiring one is a coordinated change rather than an edit
+# here. Dropping an image from this list does not unpublish it --
+# whatever is already on images.shakenfist.com stays, and consumers
+# keep working against a frozen copy -- but it does mean that copy
+# stops receiving security updates, which for these two is not yet an
+# acceptable answer:
+#   debian:11  private-ci builds its "dependencies" cache disk from
+#              this image, and that disk gates ALL CI provisioning.
+#              Retire once private-ci moves it to debian:13.
+#   debian:12  sixteen repositories still run CI on debian-12 runner
+#              labels, which private-ci bakes from this image. Retire
+#              as the eol-distro audit issues are closed.
 
 do_not_push=0
 images="$1"
 if [ "$images" == "" ]; then
-    images="ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 debian:13 debian-docker:13 debian-gnome:13 debian-xfce:13 rocky:8 rocky:9 rocky:10 fedora:41 fedora:42 fedora:43"
+    images="ubuntu:22.04 ubuntu:24.04 debian:11 centos:9-stream debian-docker:11 debian-gnome:11 debian-xfce:11 debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 debian:13 debian-docker:13 debian-gnome:13 debian-xfce:13 rocky:8 rocky:9 rocky:10 fedora:44"
 fi
 
 echo "I will build the following images: ${images}"
@@ -337,6 +363,11 @@ if [ $(echo $images | grep -c "fedora:43") -gt 0 ]; then
     build ${output} 43 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
+if [ $(echo $images | grep -c "fedora:44") -gt 0 ]; then
+    output="/srv/sf-images/output/fedora:44/fedora-44-sfagent-${datestamp}.qcow2"
+    build ${output} 44 "-" "fedora rhel-extras" shakenfist-agent
+fi
+
 if [ $(echo $images | grep -c "rocky:8") -gt 0 ]; then
     output="/srv/sf-images/output/rocky:8/rocky-8-sfagent-${datestamp}.qcow2"
     build ${output} 8 "-" "rocky-container rhel-extras" shakenfist-agent
@@ -395,29 +426,6 @@ fi
 if [ $(echo $images | grep -c "debian-xfce:13") -gt 0 ]; then
     output="/srv/sf-images/output/debian-xfce:13/debian-13-xfce-sfagent-${datestamp}.qcow2"
     build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras xfce-desktop" shakenfist-agent
-fi
-
-# And done
-echo
-echo "Complete"
-if [ $(echo $images | grep -c "debian-gnome:11") -gt 0 ]; then
-    output="/srv/sf-images/output/debian-gnome:11/debian-11-gnome-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd gnome-desktop" shakenfist-agent
-fi
-
-if [ $(echo $images | grep -c "debian-gnome:12") -gt 0 ]; then
-    output="/srv/sf-images/output/debian-gnome:12/debian-12-gnome-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
-fi
-
-if [ $(echo $images | grep -c "debian-xfce:11") -gt 0 ]; then
-    output="/srv/sf-images/output/debian-xfce:11/debian-11-xfce-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd xfce-desktop" shakenfist-agent
-fi
-
-if [ $(echo $images | grep -c "debian-xfce:12") -gt 0 ]; then
-    output="/srv/sf-images/output/debian-xfce:12/debian-12-xfce-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
 fi
 
 # And done

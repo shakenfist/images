@@ -58,9 +58,31 @@
 #     needs rebuilding.
 
 do_not_push=0
+
+# --list-images prints the list this script would build and exits.
+# tools/check-image-freshness.sh reads the list from here rather than
+# keeping its own copy: a watchdog with a second copy of the list
+# stops watching anything added to the real one, and does so
+# silently.
+#
+# It is handled here, before the apt-get preamble below, so it runs
+# as an unprivileged user on a host with none of the build
+# dependencies installed. That is what lets the watchdog run
+# anywhere, which is the whole point of the watchdog.
+list_images_only=0
+if [ "$1" == "--list-images" ]; then
+    list_images_only=1
+    shift
+fi
+
 images="$1"
 if [ "$images" == "" ]; then
     images="ubuntu:22.04 ubuntu:24.04 centos:9-stream debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 debian:13 debian-docker:13 debian-gnome:13 debian-xfce:13 rocky:8 rocky:9 rocky:10"
+fi
+
+if [ $list_images_only -eq 1 ]; then
+    echo "${images}"
+    exit 0
 fi
 
 echo "I will build the following images: ${images}"

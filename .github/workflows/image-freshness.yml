@@ -1,0 +1,62 @@
+name: Image freshness
+
+# The nightly build published nothing for sixteen days in 2026 and
+# the only signal was a non-zero exit into cron mail nobody reads.
+# This watches the published images from outside, so it reports the
+# build having stopped, the publish step having broken, and the web
+# host having gone stale, without depending on any of them.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 UTC. The nightly build starts around 03:00 UTC and runs
+    # serially through fourteen images, so this asks the question
+    # once the answer has settled rather than halfway through.
+    - cron: '0 9 * * *'
+
+jobs:
+  freshness:
+    name: Check published image freshness
+    # This job exists to notice that the build infrastructure has
+    # stopped. A watchdog sharing infrastructure with the thing it
+    # watches goes quiet at the same moment, which is the failure it
+    # is here to prevent, so it deliberately runs on a hosted runner
+    # instead of the fleet's. This repository is public, so those
+    # minutes are free, and the job reads a public URL and needs no
+    # secret beyond the automatic token.
+    runs-on: ubuntu-latest  # audit-ok: github-hosted-runner
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check published image freshness
+        id: check
+        run: |
+          tools/check-image-freshness.sh | tee freshness-report.txt
+          echo "rc=${PIPESTATUS[0]}" >> "${GITHUB_OUTPUT}"
+
+      - name: File or update the freshness issue
+        if: steps.check.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: tools/freshness-issue.sh file freshness-report.txt "${RUN_URL}"
+
+      - name: Resolve the freshness issue
+        if: steps.check.outputs.rc == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: tools/freshness-issue.sh resolve "${RUN_URL}"
+
+      - name: Fail the run when images are stale
+        if: steps.check.outputs.rc != '0'
+        run: |
+          echo "Freshness check exited ${{ steps.check.outputs.rc }}."
+          exit 1

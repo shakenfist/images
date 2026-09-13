@@ -278,7 +278,7 @@ per `docs/plans/index.md`.
 | 1. One failure stops one image | | Not started |
 | 2. Move the build mechanism | | Not started |
 | 3. Failure files an issue | | Not started |
-| 4. Freshness watchdog | | Not started |
+| 4. Freshness watchdog | | In progress |
 | 5. Repository standards | | Not started |
 | 6. Push audit | | Not started |
 
@@ -384,17 +384,11 @@ The work:
   into the environment, defaulting to not shipping when unset. Where
   build logs go is a property of the deployment rather than of the
   build, and this repository is public.
-* Add a `--list-images` flag that prints the default list and exits
-  before the `apt-get` preamble. Phase 4 needs that list and must
-  not keep a second copy of it; everything before the preamble is
-  safe to run anywhere, as an unprivileged user.
 
 Verification: run `./build.sh "debian:13 <a deliberately broken
 image> rocky:9"` on a build host and confirm that `debian:13` and
 `rocky:9` both publish, that the script exits non-zero, and that the
-summary names only the broken image. Separately confirm that
-`./build.sh --list-images` runs as an unprivileged user on a host
-with none of the build dependencies installed.
+summary names only the broken image.
 
 ### Phase 2. Move the build mechanism
 
@@ -440,9 +434,9 @@ Signal A from Q3.
 
 ### Phase 4. Freshness watchdog
 
-Status: Not started
+Status: In progress
 Effort: medium. Model: sonnet.
-Depends on: `--list-images` from Phase 1. Independent of Phase 2.
+Depends on: nothing. Independent of Phase 2.
 
 Signal B from Q3, and the highest value-per-hour phase in this plan.
 It is a scheduled job, a `HEAD` request per image, and a threshold.
@@ -459,9 +453,23 @@ It is a scheduled job, a `HEAD` request per image, and a threshold.
   72 tolerates two consecutive misses before it speaks -- long
   enough not to cry wolf over one bad night, short enough that the
   sixteen day outage would have been reported on day three.
-* Derive the image list from `build.sh --list-images` rather than
-  duplicating it. A watchdog with its own copy of the list stops
-  watching anything added to the real one, and does so silently.
+* A `--list-images` flag on `build.sh`, printing the default list
+  and exiting before the `apt-get` preamble, so the watchdog can
+  derive the list rather than duplicate it. A watchdog with its own
+  copy stops watching anything added to the real one, and does so
+  silently. Everything before the preamble is safe to run anywhere,
+  as an unprivileged user, so the flag adds no requirement on where
+  the watchdog runs.
+
+  This flag was originally an item of Phase 1. It moved here on
+  2026-09-13 so that Phase 4 does not wait on Phase 1: the flag is
+  three lines at the top of the script and shares nothing with the
+  failure isolation work further down, while Phase 1 is surgery on
+  the script that produces every image the fleet boots from.
+  Landing the detector first is the same argument the parent plan
+  makes for putting detection ahead of the migration, one level
+  down -- doing the surgery first is a smaller version of the
+  experiment that produced the outage.
 * `.github/workflows/image-freshness.yml`, this repository's first
   workflow: a `schedule` trigger, `issues: write`, calling the script
   and upserting a single issue that lists everything stale. One issue

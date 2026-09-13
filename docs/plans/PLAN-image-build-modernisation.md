@@ -274,7 +274,7 @@ per `docs/plans/index.md`.
 
 | Phase | Merged | Status |
 |-------|--------|--------|
-| 0. Planning foundation | | In progress |
+| 0. Planning foundation | 39303ef (#3) | Complete |
 | 1. One failure stops one image | | Not started |
 | 2. Move the build mechanism | | Not started |
 | 3. Failure files an issue | | Not started |
@@ -289,7 +289,7 @@ stalls, it should stall after Phase 4, not before it.
 
 ### Phase 0. Planning foundation
 
-Status: In progress
+Status: Complete
 
 This phase. The repository had no planning template, which made
 writing a plan for it circular -- hence bootstrapping the template
@@ -318,29 +318,83 @@ brought into audit scope is Phase 5's business.
 Status: Not started
 Effort: medium. Model: sonnet.
 
-Make `build.sh` continue past a failed image and report at the
-end, instead of aborting the run. This is the outage class, and
-fixing it here means it is fixed whether or not Phase 2 ever
-happens.
+Make `build.sh` continue past a failed image and report at the end,
+instead of aborting the run. This is the outage class, and fixing it
+here means it is fixed whether or not Phase 2 ever happens.
 
-* Stop one image's failure from ending the script. The script is
-  `#!/bin/bash -e` with no trap; the per-image call needs to be
-  allowed to fail without taking the script with it.
-* Accumulate failures and exit non-zero at the end with a summary
-  naming which images failed. A non-zero exit is what Phase 2 and
-  the current cron mail both key off, so it must survive.
-* Emit a `failure` Loki record for every image in the list that
-  did not produce an image, including ones skipped because an
-  earlier image failed. The absence of a record is the thing that
-  made this outage unreadable after the fact.
-* Remove the dead `if [ $? -gt 0 ]` at `build.sh:215`. It follows
-  a redirect, tests the exit status of that redirect, and can
-  never fire. Leave it and someone will eventually rely on it.
+The mechanism was traced on 2026-09-13 and is not quite what this
+phase originally assumed. Three findings shape the work, and the
+third will mislead anyone who does not know it.
+
+**The build failure is invisible because of a pipe, not because
+detection is hard.** `disk-image-create` is piped into `tee`, so the
+pipeline reports `tee`'s exit status and never the builder's. The
+comment above the check asks "why is it so hard to detect a DIB
+failure?"; the answer is that nothing has ever read the right
+variable. `${PIPESTATUS[0]}`, taken immediately after the pipeline,
+carries the real status and does not trip `errexit` -- confirmed by
+experiment. That is the root-cause fix, and it is the same idiom the
+fleet's `workflow-standards` criterion asks for elsewhere.
+
+**Do not reach for `pipefail` globally instead.** The retention
+pipeline ends in `head`, which closes the pipe early; under
+`pipefail` that pipeline reports 141. Scoping the fix to
+`PIPESTATUS` at the one pipeline that matters avoids inventing a new
+failure in the publish path.
+
+**`errexit` cannot be re-armed inside a subshell in a condition
+context.** Both `if build ...; then` and `if ( set -e; build ... );
+then` were tested; both ran straight past a failing command and then
+reported success. So the obvious implementation -- wrap the call
+site and catch the return -- produces a function that silently
+continues after a failed `qemu-img convert` and publishes whatever
+is on disk. `build()` has to stop depending on `errexit` internally
+and check its own fallible steps instead.
+
+The work:
+
+* Replace the dead exit status check with one that reads
+  `${PIPESTATUS[0]}`. It is at `build.sh:249` as of 39303ef -- this
+  phase originally cited line 215, which the comment block added in
+  #2 has since moved, so find it by content rather than by line.
+  Keep the "Build completed successfully" grep as a second
+  assertion: it catches a builder that exits zero having done
+  nothing.
+* Make `build()` explicitly error-checked. `qemu-img convert`, the
+  `rsync` publish, the `latest.qcow2` relink and the `cd` pair each
+  need a checked failure path, because per the third finding
+  `errexit` will not be in force inside the function.
+* Accumulate outcomes inside `build()` rather than editing the 38
+  call sites, and exit non-zero at the end with a summary naming
+  which images failed. A non-zero exit is what Phase 2 and the
+  current cron mail both key off, so it must survive.
+* Emit a `failure` log record for every image in the list that did
+  not produce an image, by reconciling the requested list against
+  the recorded outcomes at the end of the run. The absence of a
+  record is what made the outage unreadable after the fact, and the
+  reconciliation is what covers images a run never reached at all.
+* Guard the retention arithmetic. When a directory holds fewer than
+  seven images, `numextra` goes negative and `head -$numextra`
+  becomes `head --4`, which errors inside a command substitution and
+  is discarded. Nothing is lost today because there is nothing to
+  delete, but it is the same class of defect as the dead exit status
+  check -- an error path that cannot report -- and this phase is
+  already editing that function.
+* Move the log shipping destination and tenant out of the script and
+  into the environment, defaulting to not shipping when unset. Where
+  build logs go is a property of the deployment rather than of the
+  build, and this repository is public.
+* Add a `--list-images` flag that prints the default list and exits
+  before the `apt-get` preamble. Phase 4 needs that list and must
+  not keep a second copy of it; everything before the preamble is
+  safe to run anywhere, as an unprivileged user.
 
 Verification: run `./build.sh "debian:13 <a deliberately broken
 image> rocky:9"` on a build host and confirm that `debian:13` and
-`rocky:9` both publish, that the script exits non-zero, and that
-the summary names only the broken image.
+`rocky:9` both publish, that the script exits non-zero, and that the
+summary names only the broken image. Separately confirm that
+`./build.sh --list-images` runs as an unprivileged user on a host
+with none of the build dependencies installed.
 
 ### Phase 2. Move the build mechanism
 
@@ -388,28 +442,55 @@ Signal A from Q3.
 
 Status: Not started
 Effort: medium. Model: sonnet.
-Depends on: nothing. Can be done before Phase 2.
+Depends on: `--list-images` from Phase 1. Independent of Phase 2.
 
-Signal B from Q3, and the highest value-per-hour phase in this
-plan. It is a scheduled job, a `HEAD` request per image, and a
-threshold.
+Signal B from Q3, and the highest value-per-hour phase in this plan.
+It is a scheduled job, a `HEAD` request per image, and a threshold.
 
 * `tools/check-image-freshness.sh`: for each image in the default
   list, `HEAD https://images.shakenfist.com/<image>/latest.qcow2`,
   compare `Last-Modified` against the threshold, and report every
-  stale image rather than exiting on the first one.
-* Threshold 72 hours, as a named constant with the reasoning
-  beside it.
-* Runs on a schedule, on a runner unrelated to the build, and
-  files one issue listing everything stale.
-* Derive the image list from `build.sh` rather than duplicating
-  it. A watchdog with its own copy of the list stops watching
-  anything added to the real one, and does so silently.
+  stale image rather than exiting on the first one. Follow the house
+  style already set by `tools/check-block-device-config.sh`:
+  `errexit`, `nounset`, `pipefail`, an explanatory header, a usage
+  line, and exit 0/1/2 rather than 0/1.
+* Threshold 72 hours, as a named constant with the reasoning beside
+  it. Nightly builds mean a healthy image is under 24 hours old, so
+  72 tolerates two consecutive misses before it speaks -- long
+  enough not to cry wolf over one bad night, short enough that the
+  sixteen day outage would have been reported on day three.
+* Derive the image list from `build.sh --list-images` rather than
+  duplicating it. A watchdog with its own copy of the list stops
+  watching anything added to the real one, and does so silently.
+* `.github/workflows/image-freshness.yml`, this repository's first
+  workflow: a `schedule` trigger, `issues: write`, calling the script
+  and upserting a single issue that lists everything stale. One issue
+  for the run, not one per image.
 
-Doing this before Phase 2 is deliberate. It is independent of
-every mechanism question, it would have caught the outage that
-prompted this plan, and it keeps working no matter what Phase 2
-eventually decides.
+Two things were confirmed on 2026-09-13 before writing this.
+
+`Last-Modified` is usable. The published `latest.qcow2` is a symlink
+and the server follows it, so the header carries the target's
+modification time and differs per image -- `debian:13` reported
+`Sat, 12 Sep 2026 05:17:21 GMT` while `ubuntu:22.04` reported
+`05:05:55`. Nothing needs to parse a directory listing or a filename
+datestamp.
+
+**Run this on a GitHub-hosted runner, not a self-hosted one.** The
+phase exists to detect the build host having stopped, so a watchdog
+sharing infrastructure with the build is worth less than one that
+does not; and this repository is public, so hosted minutes are free
+and a hosted runner is the weaker trust boundary of the two. This is
+a deliberate departure from the fleet's `self-hosted-runners`
+criterion, which does not currently apply here -- see Phase 5 -- so
+mark the line `audit-ok: github-hosted-runner` with the reason. If
+Phase 5 brings this repository into audit scope, the exemption is
+then already stated where the criterion looks for it.
+
+Doing this before Phase 2 is deliberate. It is independent of every
+mechanism question, it would have caught the outage that prompted
+this plan, and it keeps working no matter what Phase 2 eventually
+decides.
 
 ### Phase 5. Repository standards
 

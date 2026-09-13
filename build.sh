@@ -298,7 +298,7 @@ function build_one () {
     # graphical consoles if you choose to install one later...
     export DIB_BOOTLOADER_DEFAULT_CMDLINE="net.ifnames=0 biosdevname=0 earlyprintk=ttyS0,115200 consoleblank=0"
 
-    export build_args="cloud-init cloud-init-datasources cloud-init-growpart block-device-efi vm"
+    export build_args="cloud-init cloud-init-datasources cloud-init-growpart block-device-efi vm verify-release"
 
     cwd=$(pwd)
 
@@ -310,6 +310,31 @@ function build_one () {
     # deliberately not exported once at the top of the script -- ${cwd}
     # is only known inside build_one().
     export DIB_BLOCK_DEVICE_CONFIG="file://${cwd}/block-device-compat.yaml"
+
+    # The release this image will be published as, taken from the
+    # label rather than from DIB_RELEASE. The verify-release element
+    # compares the built image against this and fails the build if
+    # they disagree.
+    #
+    # It has to come from the label because the two year
+    # Debian-11-as-Debian-12 defect had DIB_RELEASE, the element list
+    # and the image all agreeing with each other; the only thing they
+    # disagreed with was the name on the tin. A check against
+    # DIB_RELEASE would have passed every night for two years.
+    case "${label}" in
+        *:*)
+            expected_version="${label##*:}"
+            # CentOS Stream publishes as 9-stream and reports 9.
+            expected_version="${expected_version%-stream}"
+            export DIB_SF_EXPECTED_VERSION="${expected_version}"
+            ;;
+        *)
+            echo "BUILD FAILED: output label ${label} carries no version,"
+            echo "so the built image cannot be checked against it."
+            push_log_to_loki "${output}.log" "${label}" "failure"
+            return 1
+            ;;
+    esac
 
     if ! mkdir -p "${outdir}"; then
         echo "BUILD FAILED: could not create ${outdir}"

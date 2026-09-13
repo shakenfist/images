@@ -1,0 +1,113 @@
+#!/bin/bash
+
+# Fail the build if the image is not the release it is about to be
+# published as.
+#
+# This exists because of a defect that ran for two years and two
+# months: debian-docker:12, debian-gnome:12 and debian-xfce:12 were
+# Debian 11. The subtlety, and the reason the obvious check would not
+# have caught it, is that nothing disagreed with itself. build.sh
+# passed DIB_RELEASE=bullseye, diskimage-builder faithfully built
+# bullseye, and the image honestly reported bullseye in
+# /etc/os-release. Every internal consistency check would have
+# passed. What was wrong was the name it was published under.
+#
+# So the comparison here is against the publish label, which build.sh
+# knows and diskimage-builder does not, passed in as
+# DIB_SF_EXPECTED_VERSION. An image published as debian-docker:12 has
+# to be Debian 12, whatever anybody asked for.
+#
+# The codename check below is the secondary one: it compares
+# /etc/os-release against what DIB was asked to build, and catches a
+# build that silently produced something other than what was
+# requested. It would not have caught the two year defect on its own.
+#
+# Anything this script cannot determine is a failure, not a pass. An
+# image whose release cannot be established is exactly the case this
+# is here to stop, and the history of this repository is of error
+# paths that could not report.
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+# Overridable so the logic can be exercised outside a chroot.
+OS_RELEASE="${OS_RELEASE_FILE:-/etc/os-release}"
+
+echo "===================================================================="
+echo "Verifying the built image is the release it will be published as"
+echo "===================================================================="
+
+if [ ! -r "${OS_RELEASE}" ]; then
+    echo "FATAL: ${OS_RELEASE} is missing or unreadable, so there is no"
+    echo "way to confirm what this image actually is."
+    exit 1
+fi
+
+# Read rather than source: os-release is shell-syntax by convention,
+# but sourcing it executes whatever the image happens to contain.
+os_release_field() {
+    sed -n "s/^$1=//p" "${OS_RELEASE}" | head -1 | tr -d '"'
+}
+
+version_id=$(os_release_field VERSION_ID)
+codename=$(os_release_field VERSION_CODENAME)
+pretty=$(os_release_field PRETTY_NAME)
+
+echo "Image reports:   ${pretty:-<no PRETTY_NAME>}"
+echo "  VERSION_ID:       ${version_id:-<unset>}"
+echo "  VERSION_CODENAME: ${codename:-<unset>}"
+echo "Build asked for: DIB_RELEASE=${DIB_RELEASE:-<unset>}"
+echo "Will publish as: ${DIB_SF_EXPECTED_VERSION:-<unset>}"
+echo
+
+expected="${DIB_SF_EXPECTED_VERSION:-}"
+if [ -z "${expected}" ]; then
+    echo "FATAL: DIB_SF_EXPECTED_VERSION is not set, so this image cannot"
+    echo "be checked against the name it will be published under. It is"
+    echo "exported by build.sh; a build started some other way has to set"
+    echo "it too, or drop the verify-release element deliberately."
+    exit 1
+fi
+
+if [ -z "${version_id}" ]; then
+    echo "FATAL: ${OS_RELEASE} carries no VERSION_ID, so the release"
+    echo "cannot be established. Debian testing and unstable images are"
+    echo "the usual cause; they have no business being published under a"
+    echo "numbered label."
+    exit 1
+fi
+
+# Rocky reports a minor version (9.6 for what we call rocky:9), so a
+# major match counts. Everything else we build reports exactly what we
+# expect: Debian and Fedora a bare major, Ubuntu 22.04 and 24.04,
+# CentOS Stream the major with the suffix already stripped by build.sh.
+if [ "${version_id}" != "${expected}" ] \
+        && [ "${version_id#"${expected}".}" == "${version_id}" ]; then
+    echo "FATAL: this image is version ${version_id}, but it is about to"
+    echo "be published as version ${expected}."
+    echo
+    echo "This is the debian-docker:12-is-really-Debian-11 failure. Check"
+    echo "the DIB_RELEASE and the element list in build.sh for this image:"
+    echo "they agree with each other and disagree with the name."
+    exit 1
+fi
+
+# Secondary check. Only meaningful when DIB_RELEASE is a codename --
+# the Debian and Ubuntu families -- since the RHEL family passes a
+# number that VERSION_ID has already been compared against above.
+if [[ "${DIB_RELEASE:-}" =~ ^[a-z]+$ ]]; then
+    if [ -z "${codename}" ]; then
+        echo "FATAL: build asked for the ${DIB_RELEASE} release, but this"
+        echo "image carries no VERSION_CODENAME to check that against."
+        exit 1
+    fi
+    if [ "${codename}" != "${DIB_RELEASE}" ]; then
+        echo "FATAL: build asked for ${DIB_RELEASE} but this image is"
+        echo "${codename}. diskimage-builder did not build what it was"
+        echo "asked for."
+        exit 1
+    fi
+fi
+
+echo "Verified: ${pretty:-version ${version_id}} matches the ${expected} label."

@@ -573,12 +573,27 @@ into it.
 ### Future work
 
 * **Boot-test published images.** Nothing checks that a published
-  image boots, or that it is the distribution it claims to be. The
-  Debian 11-as-Debian 12 mislabelling ran for two years and two
-  months and would have been caught in one night by a check that
-  booted the image and read `/etc/os-release`. This is the largest
-  quality gap in this repository and it is deliberately out of
-  scope here only because it is a plan of its own.
+  image boots. This is the largest remaining quality gap in this
+  repository and it is deliberately out of scope here only because
+  it is a plan of its own.
+
+  The other half of this item -- checking that an image is the
+  distribution it claims to be -- was delivered on 2026-09-13 as the
+  `verify-release` element, under phase 2 of shakenfist/development's
+  `PLAN-image-supply-chain.md`. It needed no boot: `finalise.d` hooks
+  run in the chroot while the image is being assembled, so the check
+  reads `/etc/os-release` in place.
+
+  This item used to claim the mislabelling "would have been caught in
+  one night by a check that booted the image and read
+  `/etc/os-release`". That was wrong in a way worth recording,
+  because it is the reason the element is built the way it is.
+  Nothing in that build disagreed with itself: `build.sh` passed
+  `DIB_RELEASE=bullseye`, diskimage-builder built bullseye, and the
+  image honestly reported bullseye. Any check comparing the image
+  against what the build asked for would have passed every night for
+  two years and two months. What was wrong was the name it was
+  published under, so that is what the element compares against.
 * **A Fedora image that builds.** `fedora:43` and `fedora:44` have
   never built successfully -- both fail on `grpcio-tools` needing
   a C++ compiler. Fedora is currently absent from the default list

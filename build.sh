@@ -126,23 +126,48 @@ fi
 mkdir -p /srv/sf-images/cache
 datestamp=$(date +%Y%m%d)
 
+# Where build logs are shipped, read from the environment so the
+# destination is a property of the deployment rather than of the
+# build. Unset means logs are not shipped at all, which is the right
+# default for anyone who clones this repository and runs it: a build
+# should not post to somebody else's log aggregator because the
+# address was baked into the script.
+LOKI_URL="${SF_IMAGES_LOKI_URL:-}"
+LOKI_TENANT="${SF_IMAGES_LOKI_TENANT:-}"
+
+# Which images built and which failed. The reconciliation at the end of the script turns the
+# gap between the request and these two into a record: an image that
+# is in neither list was never attempted, and before this that state
+# produced no signal at all.
+built_images=""
+failed_images=""
+
 function push_log_to_loki() {
     # Push build log to Loki for centralized monitoring
-    # $1: log file path
+    # $1: log file path (may not exist; see below)
     # $2: image label (e.g., "debian-xfce:12")
     # $3: build result ("success" or "failure")
+    # $4: optional message to record when there is no log file
+    #
+    # A missing log file used to return quietly. That is the shape of
+    # the sixteen day outage: the images that were never reached
+    # produced no record, so afterwards there was no way to tell a
+    # build that failed from one that never ran. A missing log now
+    # ships a single synthetic line saying so.
 
     local log_file="$1"
     local image_label="$2"
     local build_result="$3"
+    local note="${4:-}"
 
-    if [ ! -f "$log_file" ]; then
+    if [ -z "${LOKI_URL}" ]; then
         return 0
     fi
 
     echo "Pushing build log to Loki for ${image_label} (${build_result})"
 
     LOG_FILE="$log_file" IMAGE_LABEL="$image_label" BUILD_RESULT="$build_result" \
+        LOKI_URL="${LOKI_URL}" LOKI_TENANT="${LOKI_TENANT}" NOTE="${note}" \
         BUILD_HOST="$(hostname)" python3 << 'PYEOF' || true
 import json, os, time, urllib.request
 
@@ -151,8 +176,15 @@ image_label = os.environ['IMAGE_LABEL']
 build_result = os.environ['BUILD_RESULT']
 build_host = os.environ.get('BUILD_HOST', 'unknown')
 
-with open(log_file, 'r', errors='replace') as f:
-    lines = f.readlines()
+try:
+    with open(log_file, 'r', errors='replace') as f:
+        lines = f.readlines()
+except OSError:
+    # No log means the build never got far enough to write one.
+    # Say so rather than saying nothing.
+    lines = [os.environ.get('NOTE', '') or (
+        'No build log at %s; this image produced no output.'
+        % log_file)]
 
 base_ns = int(time.time() * 1e9)
 values = [
@@ -176,13 +208,15 @@ payload = json.dumps({
     }]
 }).encode()
 
+headers = {'Content-Type': 'application/json'}
+tenant = os.environ.get('LOKI_TENANT', '')
+if tenant:
+    headers['X-Scope-OrgID'] = tenant
+
 req = urllib.request.Request(
-    'http://loki.home.stillhq.com:3100/loki/api/v1/push',
+    os.environ['LOKI_URL'],
     data=payload,
-    headers={
-        'Content-Type': 'application/json',
-        'X-Scope-OrgID': 'sfyow',
-    },
+    headers=headers,
 )
 try:
     urllib.request.urlopen(req)
@@ -192,12 +226,58 @@ except Exception as e:
 PYEOF
 }
 
+# Build one image, or record why we could not.
+#
+# Every image in the list gets its own call, and a failure here must
+# stop this image rather than the run. The script is "#!/bin/bash -e",
+# which used to mean the first image that failed took the other
+# thirteen with it -- the shape of the sixteen day outage in August
+# and September 2026.
+#
+# Read the header of build_one() before editing it. errexit is NOT in
+# force inside that function, so every fallible command there is
+# checked by hand.
 function build () {
+    local output="$1"
+    local label
+    label=$(basename "$(dirname "${output}")")
+
+    if build_one "$@"; then
+        built_images="${built_images} ${label}"
+    else
+        failed_images="${failed_images} ${label}"
+        echo
+        echo "*** ${label} FAILED; continuing with the next image ***"
+        echo
+    fi
+
+    # Always successful, so that "set -e" at the top of the script
+    # cannot kill the run at a call site. The non-zero exit the run
+    # owes its caller is raised once, at the end, by the summary.
+    return 0
+}
+
+function build_one () {
     # $1: output filename
     # $2: OS release name (bionic, focal, etc)
     # $3: python version (2 or 3)
     # $4: distro specific args
     # $5: name of the shakenfist agent package
+    #
+    # IMPORTANT: this function is called from the condition of an "if"
+    # in build(), and bash disables errexit for the whole of a
+    # function invoked that way -- including, as tested, inside a
+    # subshell that sets "set -e" again. So nothing here fails the
+    # script by itself. Every command whose failure matters is
+    # checked explicitly, and the function returns non-zero. Adding
+    # an unchecked command here reintroduces the class of bug where a
+    # broken conversion publishes whatever happened to be on disk.
+
+    local output="$1"
+    local outdir
+    local label
+    outdir=$(dirname "${output}")
+    label=$(basename "${outdir}")
 
     echo
     echo "===================================================================="
@@ -228,11 +308,14 @@ function build () {
     # "grub-install: error: unknown filesystem". The path is absolute
     # because disk-image-create runs from elsewhere, and this is
     # deliberately not exported once at the top of the script -- ${cwd}
-    # is only known inside build().
+    # is only known inside build_one().
     export DIB_BLOCK_DEVICE_CONFIG="file://${cwd}/block-device-compat.yaml"
-    output=$1
-    outdir=$(dirname ${output})
-    mkdir -p ${outdir}
+
+    if ! mkdir -p "${outdir}"; then
+        echo "BUILD FAILED: could not create ${outdir}"
+        push_log_to_loki "${output}.log" "${label}" "failure"
+        return 1
+    fi
 
     echo "OS release: ${2}"
     export DIB_APT_OPTIONS=""
@@ -258,8 +341,17 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
     fi
 
     set -x
-    # Build an uncompressed image first
+    # Build an uncompressed image first.
+    #
+    # The pipe into tee is why detecting a failure here was ever hard:
+    # a pipeline reports the exit status of its LAST command, so this
+    # line's status is tee's and is essentially always zero. The check
+    # that used to sit below read $? of the "if" above it and could
+    # never fire. PIPESTATUS carries the real answer and has to be read
+    # immediately, before any other command overwrites it.
     DIB_RELEASE=$2 /usr/local/bin/disk-image-create $4 ${build_args} -u -o temp.qcow2 | tee ${output}.log
+    dib_status=${PIPESTATUS[0]}
+    set +x
 
     # If we detected a checksum failure, clear the cache. This seems common with
     # upstream Ubuntu images for some reason.
@@ -267,51 +359,77 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
         rm -rf /srv/sf-images/cache
     fi
 
-    # Why is it so hard to detect a DIB failure?
-    if [ $? -gt 0 ]; then
-        echo "BUILD FAILED."
-        push_log_to_loki "${output}.log" "$(basename ${outdir})" "failure"
+    if [ "${dib_status}" -ne 0 ]; then
+        echo "BUILD FAILED: disk-image-create exited ${dib_status}"
+        push_log_to_loki "${output}.log" "${label}" "failure"
         return 1
     fi
 
+    # Kept as a second assertion now that the first one works. It
+    # catches a builder that exits zero having produced nothing,
+    # which the exit status alone would not.
     if [ $(grep -c "Build completed successfully" ${output}.log) -lt 1 ]; then
-        echo "BUILD FAILED"
-        push_log_to_loki "${output}.log" "$(basename ${outdir})" "failure"
+        echo "BUILD FAILED: no success marker in the build log"
+        push_log_to_loki "${output}.log" "${label}" "failure"
         return 1
     fi
-    set +x
 
     # Transcode the image into the preferred format
-    qemu-img convert -t none -o cluster_size=2048K -c -O qcow2 temp.qcow2 ${output}
+    if ! qemu-img convert -t none -o cluster_size=2048K -c -O qcow2 temp.qcow2 ${output}; then
+        echo "BUILD FAILED: could not transcode the image"
+        push_log_to_loki "${output}.log" "${label}" "failure"
+        return 1
+    fi
     rm -rf tmp* temp.qcow2
 
-    cd ${outdir}
-    rm -f latest.qcow2
-    ln -s $(basename ${output}) latest.qcow2
+    # Each stage below runs in a subshell so that a cd cannot leak
+    # into the next image if the stage fails part way through. The
+    # old code cd'd in the function body and relied on reaching the
+    # matching cd at the end, which a failure in between skipped.
+    if ! ( cd "${outdir}" \
+            && rm -f latest.qcow2 \
+            && ln -s "$(basename "${output}")" latest.qcow2 ); then
+        echo "BUILD FAILED: could not update the latest.qcow2 symlink"
+        push_log_to_loki "${output}.log" "${label}" "failure"
+        return 1
+    fi
 
     # Copy images to the repository
     if [ $do_not_push == 0 ]; then
-        cd /srv/sf-images/output
-        rsync -rcavp --links --progress . /srv/www/images.shakenfist.com/
+        if ! ( cd /srv/sf-images/output \
+                && rsync -rcavp --links --progress . /srv/www/images.shakenfist.com/ ); then
+            echo "BUILD FAILED: could not publish to images.shakenfist.com"
+            push_log_to_loki "${output}.log" "${label}" "failure"
+            return 1
+        fi
 
-        # Cleanup old images
-	dirname=$(ls)
-	cd "/srv/www/images.shakenfist.com/$dirname"
-        numimages=$( ls *.qcow2 | grep -v latest | sort | wc -l )
-        numextra=$(( $numimages - 7 ))
+        # Cleanup old images. Not fatal: the image is published by
+        # this point, and failing the build because the retention
+        # sweep stumbled would report the wrong problem.
+        (
+            cd "/srv/www/images.shakenfist.com/${label}" || exit 0
+            numimages=$( ls *.qcow2 | grep -v latest | sort | wc -l )
+            numextra=$(( numimages - 7 ))
 
-        for img in $( ls *.qcow2 | grep -v latest | sort | head -$numextra ); do
-            echo "Removing $img"
-            rm -f $img $img.log
-        done
+            # With fewer than seven images this is negative, and
+            # "head --4" is an error that a command substitution
+            # silently discards. Nothing was lost, but an error path
+            # that cannot report is how the rest of this file went
+            # wrong.
+            if [ ${numextra} -gt 0 ]; then
+                for img in $( ls *.qcow2 | grep -v latest | sort | head -${numextra} ); do
+                    echo "Removing $img"
+                    rm -f $img $img.log
+                done
+            fi
+        ) || echo "WARNING: retention sweep for ${label} did not complete"
     else
         echo "Skipping push"
     fi
-    cd ${cwd}
-    push_log_to_loki "${output}.log" "$(basename ${outdir})" "success"
+
+    push_log_to_loki "${output}.log" "${label}" "success"
     return 0
 }
-
 # Too old for the agent to run, but convenient to have for testing
 if [ $(echo $images | grep -c "ubuntu:16.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:16.04/ubuntu-16.04-${datestamp}.qcow2"
@@ -484,6 +602,60 @@ if [ $(echo $images | grep -c "debian-xfce:13") -gt 0 ]; then
     build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras xfce-desktop" shakenfist-agent
 fi
 
-# And done
+# Reconcile what was asked for against what actually happened.
+#
+# An image named in the request that reached neither list was never
+# attempted: the run stopped before it, or nothing here knows how to
+# build it. That state used to produce no record at all, which is why
+# the sixteen day outage could not be read afterwards even though
+# logs were being shipped the whole time -- the images that mattered
+# were the ones that said nothing.
+#
+# The comparison is against the list as given, so a partial label
+# typed by hand ("debian" rather than "debian:13") reports as not
+# attempted. The default list is exact.
 echo
+echo "===================================================================="
+echo "Build summary"
+echo "===================================================================="
+
+not_attempted=""
+for image in ${images}; do
+    if echo " ${built_images} " | grep -qF " ${image} "; then
+        continue
+    fi
+    if echo " ${failed_images} " | grep -qF " ${image} "; then
+        continue
+    fi
+    not_attempted="${not_attempted} ${image}"
+    push_log_to_loki \
+        "/srv/sf-images/output/${image}/not-attempted.log" \
+        "${image}" "failure" \
+        "${image} was requested but never attempted; the run ended before reaching it."
+done
+
+if [ -n "${built_images}" ]; then
+    printf '%-15s%s\n' 'Built:' "${built_images# }"
+fi
+if [ -n "${failed_images}" ]; then
+    printf '%-15s%s\n' 'Failed:' "${failed_images# }"
+fi
+if [ -n "${not_attempted}" ]; then
+    printf '%-15s%s\n' 'Not attempted:' "${not_attempted# }"
+fi
+if [ -z "${built_images}${failed_images}${not_attempted}" ]; then
+    echo "Nothing to do."
+fi
+
+echo
+
+# The run's exit status. Cron mail and any future workflow both key
+# off this, so it has to survive the per-image isolation above: one
+# image failing no longer stops the others, but it still fails the
+# run.
+if [ -n "${failed_images}" ] || [ -n "${not_attempted}" ]; then
+    echo "Complete, with failures."
+    exit 1
+fi
+
 echo "Complete"

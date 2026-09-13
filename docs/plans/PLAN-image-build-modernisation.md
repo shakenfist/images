@@ -275,10 +275,10 @@ per `docs/plans/index.md`.
 | Phase | Merged | Status |
 |-------|--------|--------|
 | 0. Planning foundation | 39303ef (#3) | Complete |
-| 1. One failure stops one image | | Not started |
+| 1. One failure stops one image | | In progress |
 | 2. Move the build mechanism | | Not started |
 | 3. Failure files an issue | | Not started |
-| 4. Freshness watchdog | | In progress |
+| 4. Freshness watchdog | acccd2b (#5) | Complete |
 | 5. Repository standards | | Not started |
 | 6. Push audit | | Not started |
 
@@ -315,7 +315,7 @@ brought into audit scope is Phase 5's business.
 
 ### Phase 1. One failure stops one image
 
-Status: Not started
+Status: In progress
 Effort: medium. Model: sonnet.
 
 Make `build.sh` continue past a failed image and report at the end,
@@ -434,7 +434,7 @@ Signal A from Q3.
 
 ### Phase 4. Freshness watchdog
 
-Status: In progress
+Status: Complete
 Effort: medium. Model: sonnet.
 Depends on: nothing. Independent of Phase 2.
 
@@ -510,9 +510,11 @@ Each item is separable; none blocks the others.
 
 * `.pre-commit-config.yaml` running shellcheck and trailing
   whitespace checks, plus a CI workflow running the same.
-* The 91 outstanding shellcheck findings in `build.sh`. Expect to
-  suppress some deliberately; a suppression with a reason is a
-  result, a blanket disable is not.
+* The outstanding shellcheck findings in `build.sh`. This plan said
+  91; it was 136 on master before Phase 1 and 125 after, so re-count
+  rather than trusting any of those numbers. Expect to suppress some
+  deliberately; a suppression with a reason is a result, a blanket
+  disable is not.
 * `AGENTS.md` is four lines and says image builds are triggered
   "manually or via cron", which Phase 2 makes wrong. Update it
   when Phase 2 lands, not before.

@@ -278,7 +278,7 @@ per `docs/plans/index.md`.
 | 1. One failure stops one image | | Not started |
 | 2. Move the build mechanism | | Not started |
 | 3. Failure files an issue | | Not started |
-| 4. Freshness watchdog | | Not started |
+| 4. Freshness watchdog | | In progress |
 | 5. Repository standards | | Not started |
 | 6. Push audit | | Not started |
 
@@ -434,7 +434,7 @@ Signal A from Q3.
 
 ### Phase 4. Freshness watchdog
 
-Status: Not started
+Status: In progress
 Effort: medium. Model: sonnet.
 Depends on: nothing. Independent of Phase 2.
 

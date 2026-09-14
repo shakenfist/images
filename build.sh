@@ -88,6 +88,60 @@ fi
 echo "I will build the following images: ${images}"
 echo
 
+# Run the build.sh that is on master, not the one that happened to be
+# in this checkout when cron fired.
+#
+# Nothing updated this repository. cron runs
+# "cd /srv/sf-images/images; ./build.sh", and the only "git pull" in
+# this script is diskimage-builder's, a few lines below -- which made
+# the checkout look maintained while it was not. images#5, #6 and #7
+# all merged and then did not run: on the night of 2026-09-14 the
+# build was still assembling its element list without verify-release,
+# a day after that element landed, and nothing said so.
+#
+# Placed after the --list-images exit above so the watchdog, which
+# runs this script on a GitHub runner in a fresh checkout, never
+# triggers a pull.
+#
+# The re-exec is not optional. bash reads a script lazily, by byte
+# offset, so replacing build.sh underneath a running build.sh makes it
+# resume at whatever text now happens to sit at that offset. The guard
+# variable stops the new copy pulling again and recursing.
+#
+# A failed pull warns and carries on rather than aborting. A checkout
+# that cannot fast-forward -- no network, a local edit, a diverged
+# branch -- is an operator problem, and building yesterday's images is
+# a much better answer to it than building none; the freshness
+# watchdog in tools/check-image-freshness.sh is what notices if this
+# goes on.
+#
+# The -d .git guard is for a checkout that is not one: this script is
+# occasionally run from an unpacked copy, and under errexit a failed
+# "git rev-parse" would end the run rather than skip the update.
+if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ -d .git ]; then
+    before=$(git rev-parse HEAD)
+    if git pull --ff-only origin master; then
+        after=$(git rev-parse HEAD)
+        if [ "${before}" != "${after}" ]; then
+            echo
+            echo "===================================================================="
+            echo "build.sh updated: ${before} -> ${after}. Restarting."
+            echo "===================================================================="
+            echo
+            export SF_IMAGES_SELF_UPDATED=1
+            exec "$0" "$@"
+        fi
+    else
+        echo
+        echo "===================================================================="
+        echo "WARNING: could not fast-forward this checkout to origin/master."
+        echo "Building with the code that is here, which may be older than what"
+        echo "has been merged. Fix the checkout at $(pwd)."
+        echo "===================================================================="
+        echo
+    fi
+fi
+
 # Ensure we're up to date, and have diskimage-builder installed.
 apt-get update
 apt-get dist-upgrade -y

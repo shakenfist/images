@@ -13,6 +13,12 @@ Images are built using OpenStack's
 5. Pushes the build log to Loki (sfyow tenant)
 6. Publishes to the image repository
 
+The script runs nightly from cron on a single build host, and
+fast-forwards its own checkout before it starts. See
+[docs/build-host.md](docs/build-host.md) for how that works, why it
+had to be added, and how to check whether a merged change is actually
+running.
+
 ## Element System
 
 DIB elements are composable units that customise images. Each

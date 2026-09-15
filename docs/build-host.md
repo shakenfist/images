@@ -54,16 +54,46 @@ After that the run keeps itself current.
   how `tools/check-image-freshness.sh` reads the image list. The
   watchdog runs on a GitHub runner in a fresh checkout and has no
   business pulling.
-* A checkout that cannot fast-forward -- a local edit, a diverged
-  branch, no network -- warns loudly and builds anyway. Yesterday's
-  images beat no images, and
-  [the freshness watchdog](../tools/check-image-freshness.sh) is what
-  notices if it goes on.
+* A checkout that cannot be updated -- a local edit, a diverged
+  branch, no network, or a repository git refuses to open at all --
+  warns loudly and builds anyway. Yesterday's images beat no images,
+  and [the freshness watchdog](../tools/check-image-freshness.sh) is
+  what notices if it goes on.
 * The re-exec matters. bash reads a script lazily, by byte offset, so
   replacing `build.sh` underneath a running `build.sh` resumes it at
   whatever text now sits at that offset. `tools/test-self-update.sh`
   exercises all of this, including that the restart happens exactly
   once.
+
+## The checkout has to belong to the user cron runs as
+
+cron runs `build.sh` as root. git refuses to operate on a repository
+owned by somebody else:
+
+```
+fatal: detected dubious ownership in repository at '/srv/sf-images/images'
+```
+
+On 2026-09-15 that ended the nightly build in under a second. The
+checkout on the build host belonged to `debian`, the self-update runs
+git before anything else, and the host has no MTA, so cron discarded
+the one line that said why. Nothing was published and nothing was
+said. `build.sh` now treats any git failure as a reason to warn and
+build anyway, so the same mistake costs a stale checkout rather than
+a whole night -- but the ownership still has to be right for the
+self-update to do its job at all. The deploy in the 33fl repository
+owns the checkout as root and checks it.
+
+**This does not reproduce under `sudo`,** which is the trap. git
+allows a repository owned by the uid in `SUDO_UID`, so
+`sudo git -C /srv/sf-images/images status` succeeds from an
+interactive login on exactly the checkout that cron cannot read. To
+ask the question cron asks:
+
+```
+sudo env -u SUDO_UID -u SUDO_GID -u SUDO_USER \
+    git -C /srv/sf-images/images rev-parse HEAD
+```
 
 ## Checking whether a change is live
 

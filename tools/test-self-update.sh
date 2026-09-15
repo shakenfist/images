@@ -85,8 +85,32 @@ advance_origin() {
     rm -rf "${WORK}/push"
 }
 
+# The exit status is recorded rather than propagated. The block is
+# there to keep the build running whatever git does, so a regression
+# shows up as a script that died, and a test harness that dies with it
+# reports nothing.
 run_in_checkout() {
-    ( cd "${WORK}/checkout" && timeout 30 ./build.sh ) > "${WORK}/out" 2>&1
+    local rc=0
+    ( cd "${WORK}/checkout" && timeout 30 ./build.sh ) > "${WORK}/out" 2>&1 || rc=$?
+    echo "${rc}" > "${WORK}/rc"
+}
+
+# The same, with a git on PATH that refuses everything the way the
+# real one refuses a checkout it thinks belongs to somebody else.
+# Ownership cannot be faked without root, and the block does not care
+# which git command failed or why -- only that one did.
+run_in_checkout_with_broken_git() {
+    mkdir -p "${WORK}/bin"
+    cat > "${WORK}/bin/git" <<'STUB'
+#!/bin/sh
+echo "fatal: detected dubious ownership in repository at '$(pwd)'" >&2
+exit 128
+STUB
+    chmod +x "${WORK}/bin/git"
+    local rc=0
+    ( cd "${WORK}/checkout" && PATH="${WORK}/bin:${PATH}" timeout 30 ./build.sh ) \
+        > "${WORK}/out" 2>&1 || rc=$?
+    echo "${rc}" > "${WORK}/rc"
 }
 
 check() {
@@ -97,8 +121,9 @@ check() {
     got_count=$(grep -c "^MARKER ${marker}$" "${WORK}/out" || true)
 
     if [ "${got_count}" != "${count}" ]; then
-        printf '  FAIL  %-44s want %s x%s, got x%s\n' \
-            "${name}" "${marker}" "${count}" "${got_count}"
+        printf '  FAIL  %-44s want %s x%s, got x%s (exit %s)\n' \
+            "${name}" "${marker}" "${count}" "${got_count}" \
+            "$(cat "${WORK}/rc")"
         sed 's/^/          /' "${WORK}/out"
         failed=$(( failed + 1 ))
         return
@@ -163,11 +188,30 @@ rm -rf "${WORK}/checkout/.git"
 run_in_checkout
 check 'no .git skips the update' v1 1 -
 
+# A .git that is there but is not a repository. The "-d .git" guard
+# waves this through, so the block itself has to survive git failing.
+setup
+rm -rf "${WORK}/checkout/.git"
+mkdir "${WORK}/checkout/.git"
+run_in_checkout
+check 'unusable .git still builds' v1 1 'WARNING'
+
+# The 2026-09-15 outage, as a test. git exited 128 on the first
+# command in the block -- the checkout on the build host belonged to a
+# different user than the root cron job reading it -- and the run
+# ended there, silently, having built nothing. Before the fix this
+# case produces no marker at all.
+setup
+run_in_checkout_with_broken_git
+check 'git refusing the repository still builds' v1 1 'WARNING'
+
 # The guard variable stops a second pass pulling again.
 setup
 advance_origin
+guard_rc=0
 ( cd "${WORK}/checkout" && SF_IMAGES_SELF_UPDATED=1 timeout 30 ./build.sh ) \
-    > "${WORK}/out" 2>&1
+    > "${WORK}/out" 2>&1 || guard_rc=$?
+echo "${guard_rc}" > "${WORK}/rc"
 check 'guard variable skips the update' v1 1 -
 
 echo

@@ -115,12 +115,30 @@ echo
 # watchdog in tools/check-image-freshness.sh is what notices if this
 # goes on.
 #
-# The -d .git guard is for a checkout that is not one: this script is
-# occasionally run from an unpacked copy, and under errexit a failed
-# "git rev-parse" would end the run rather than skip the update.
+# Every git command here has to be inside the "if" condition, because
+# this script runs under errexit and an assignment from a command
+# substitution is a simple command: "before=$(git rev-parse HEAD)" on
+# a line of its own ends the run when git exits non-zero, before the
+# warning below can be reached.
+#
+# That is not hypothetical. On 2026-09-15 the nightly build stopped
+# dead at 05:00:01, having published nothing and said nothing:
+#
+#   fatal: detected dubious ownership in repository at
+#   '/srv/sf-images/images'
+#
+# The checkout on the build host belongs to a different user than the
+# root cron job that runs this script, so git refuses to touch it. The
+# "-d .git" guard did not help -- .git was there, and perfectly valid;
+# git declined on ownership rather than on the repository being
+# missing. cron had no MTA, so the output went nowhere.
+#
+# So the guard cannot be a test for one particular way of not being a
+# repository. Any git failure at all has to land in the else branch:
+# an unpacked copy with no .git, a checkout git will not open, a
+# missing origin, a diverged branch, no network.
 if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ -d .git ]; then
-    before=$(git rev-parse HEAD)
-    if git pull --ff-only origin master; then
+    if before=$(git rev-parse HEAD) && git pull --ff-only origin master; then
         after=$(git rev-parse HEAD)
         if [ "${before}" != "${after}" ]; then
             echo
@@ -134,9 +152,11 @@ if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ -d .git ]; then
     else
         echo
         echo "===================================================================="
-        echo "WARNING: could not fast-forward this checkout to origin/master."
-        echo "Building with the code that is here, which may be older than what"
-        echo "has been merged. Fix the checkout at $(pwd)."
+        echo "WARNING: could not update this checkout from origin/master."
+        echo "Building with the code that is here, which may be older than"
+        echo "what has been merged. The git error is above; if it is about"
+        echo "dubious ownership, the checkout belongs to a different user"
+        echo "than the one running this script. Fix the checkout at $(pwd)."
         echo "===================================================================="
         echo
     fi

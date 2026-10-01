@@ -18,6 +18,26 @@ logs are published beside the image itself, as
 `<image>/<name>-<datestamp>.qcow2.log`, and shipped to Loki under
 `{job="image-build"}` on the `sfyow` tenant.
 
+## The run summary is in Loki, not in cron mail
+
+The run ends with a summary of what it was asked to build and what
+became of each image: built, failed, or never attempted. The build
+host has no MTA, so cron discards everything the run prints, and that
+summary used to go with it. It is the only record of an image that
+was never attempted -- a failed build at least leaves its own log
+behind -- so it is shipped to Loki as a stream of its own:
+
+```
+{job="image-build-summary"}
+{job="image-build-summary", result="failure"}
+```
+
+`result` is `failure` when any image failed or was not attempted,
+matching the run's exit status. The stream carries no `image` label,
+so queries against `{job="image-build"}` see only per image logs. An
+absence of this stream for a night means the run did not reach its
+end at all.
+
 ## The checkout updates itself, but only since 2026-09-14
 
 `build.sh` fast-forwards its own checkout to `origin/master` at the

@@ -52,11 +52,13 @@ sudo ./build.sh "ubuntu:24.04"
 Build logs are pushed to Loki (`loki.home.stillhq.com`, tenant
 `sfyow`) after each image build completes. Logs are labelled with
 `job=image-build`, the image name, the build host, and success or
-failure status. Query them with:
+failure status. Each run also ships its summary of built, failed and
+never attempted images as `job=image-build-summary`. Query them with:
 
 ```bash
 loki-query '{job="image-build"}' --tenant sfyow --since 24h
 loki-query '{job="image-build", image="debian-xfce:12"}' --tenant sfyow --since 7d
+loki-query '{job="image-build-summary"}' --tenant sfyow --since 24h
 ```
 
 ## Patches

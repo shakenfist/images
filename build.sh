@@ -223,6 +223,11 @@ function push_log_to_loki() {
     # $3: build result ("success" or "failure")
     # $4: optional message to record when there is no log file
     #
+    # The stream is labelled job="image-build" unless LOKI_JOB says
+    # otherwise, and carries no image label when $2 is empty. The run
+    # summary uses both, so it does not show up as an image in queries
+    # written against the per image logs.
+    #
     # A missing log file used to return quietly. That is the shape of
     # the sixteen day outage: the images that were never reached
     # produced no record, so afterwards there was no way to tell a
@@ -238,11 +243,13 @@ function push_log_to_loki() {
         return 0
     fi
 
-    echo "Pushing build log to Loki for ${image_label} (${build_result})"
+    local job="${LOKI_JOB:-image-build}"
+
+    echo "Pushing ${job} log to Loki for ${image_label:-the run} (${build_result})"
 
     LOG_FILE="$log_file" IMAGE_LABEL="$image_label" BUILD_RESULT="$build_result" \
         LOKI_URL="${LOKI_URL}" LOKI_TENANT="${LOKI_TENANT}" NOTE="${note}" \
-        BUILD_HOST="$(hostname)" python3 << 'PYEOF' || true
+        JOB="${job}" BUILD_HOST="$(hostname)" python3 << 'PYEOF' || true
 import json, os, time, urllib.request
 
 log_file = os.environ['LOG_FILE']
@@ -270,14 +277,17 @@ values = [
 if not values:
     exit(0)
 
+stream = {
+    'job': os.environ['JOB'],
+    'host': build_host,
+    'result': build_result,
+}
+if image_label:
+    stream['image'] = image_label
+
 payload = json.dumps({
     'streams': [{
-        'stream': {
-            'job': 'image-build',
-            'host': build_host,
-            'image': image_label,
-            'result': build_result,
-        },
+        'stream': stream,
         'values': values,
     }]
 }).encode()
@@ -294,7 +304,7 @@ req = urllib.request.Request(
 )
 try:
     urllib.request.urlopen(req)
-    print('Pushed %d log lines to Loki for %s' % (len(values), image_label))
+    print('Pushed %d log lines to Loki for %s' % (len(values), image_label or 'the run'))
 except Exception as e:
     print('Warning: failed to push logs to Loki: %s' % e)
 PYEOF
@@ -713,11 +723,10 @@ fi
 # The comparison is against the list as given, so a partial label
 # typed by hand ("debian" rather than "debian:13") reports as not
 # attempted. The default list is exact.
-echo
-echo "===================================================================="
-echo "Build summary"
-echo "===================================================================="
-
+#
+# The summary itself is shipped to Loki as well as printed. cron runs
+# this on a host with no MTA, so stdout goes nowhere, and the summary
+# is the only place the run says what it did not do.
 not_attempted=""
 for image in ${images}; do
     if echo " ${built_images} " | grep -qF " ${image} "; then
@@ -733,26 +742,42 @@ for image in ${images}; do
         "${image} was requested but never attempted; the run ended before reaching it."
 done
 
-if [ -n "${built_images}" ]; then
-    printf '%-15s%s\n' 'Built:' "${built_images# }"
-fi
-if [ -n "${failed_images}" ]; then
-    printf '%-15s%s\n' 'Failed:' "${failed_images# }"
-fi
-if [ -n "${not_attempted}" ]; then
-    printf '%-15s%s\n' 'Not attempted:' "${not_attempted# }"
-fi
-if [ -z "${built_images}${failed_images}${not_attempted}" ]; then
-    echo "Nothing to do."
-fi
+summary_log=$(mktemp)
+{
+    echo
+    echo "===================================================================="
+    echo "Build summary"
+    echo "===================================================================="
+    printf '%-15s%s\n' 'Requested:' "${images}"
+    if [ -n "${built_images}" ]; then
+        printf '%-15s%s\n' 'Built:' "${built_images# }"
+    fi
+    if [ -n "${failed_images}" ]; then
+        printf '%-15s%s\n' 'Failed:' "${failed_images# }"
+    fi
+    if [ -n "${not_attempted}" ]; then
+        printf '%-15s%s\n' 'Not attempted:' "${not_attempted# }"
+    fi
+    if [ -z "${built_images}${failed_images}${not_attempted}" ]; then
+        echo "Nothing to do."
+    fi
+    echo
+} > "${summary_log}"
+cat "${summary_log}"
 
-echo
+if [ -n "${failed_images}" ] || [ -n "${not_attempted}" ]; then
+    run_result="failure"
+else
+    run_result="success"
+fi
+LOKI_JOB="image-build-summary" push_log_to_loki "${summary_log}" "" "${run_result}"
+rm -f "${summary_log}"
 
 # The run's exit status. Cron mail and any future workflow both key
 # off this, so it has to survive the per-image isolation above: one
 # image failing no longer stops the others, but it still fails the
 # run.
-if [ -n "${failed_images}" ] || [ -n "${not_attempted}" ]; then
+if [ "${run_result}" = "failure" ]; then
     echo "Complete, with failures."
     exit 1
 fi

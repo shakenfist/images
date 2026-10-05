@@ -38,11 +38,16 @@
 # only manufactures a nightly failure, which is the noise that hid a
 # sixteen day outage.
 #
-# debian:12 is past standard security support (2026-06-10) and is
-# still built deliberately. private-ci bakes the debian-12 runner
-# labels that sixteen repositories boot on from it, and Debian LTS
-# covers bookworm until 2028. Retire it as the eol-distro audit
-# issues are closed, not before.
+# debian:12 is past standard security support (2026-06-10)
+# and is still built deliberately: Debian LTS covers bookworm
+# until 2028, and a guest image someone boots on purpose is a
+# supported option, not a defect. The debian-12, debian-12-docker
+# and debian-gnome-12 runner labels this image used to feed were
+# retired from private-ci's IMAGE_BUILDS and CI_IMAGES on 2026-10-03
+# (private-ci#100), so nothing bakes them from here any more and
+# a future reader does not need to go looking for the repositories
+# that used to boot it. Retire this entry when bookworm's LTS ends
+# in 2028, not before.
 #
 # Two things elsewhere need doing as a result of the above, and
 # neither can be done in this repository:

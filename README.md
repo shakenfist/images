@@ -49,16 +49,26 @@ sudo ./build.sh "ubuntu:24.04"
 
 ## Log Forwarding
 
-Build logs are pushed to Loki (`loki.home.stillhq.com`, tenant
-`sfyow`) after each image build completes. Logs are labelled with
-`job=image-build`, the image name, the build host, and success or
-failure status. Each run also ships its summary of built, failed and
-never attempted images as `job=image-build-summary`. Query them with:
+When `SF_IMAGES_LOKI_URL` and `SF_IMAGES_LOKI_TENANT` are set in the
+build host's environment, `build.sh` pushes each image's build log to
+that Loki after the image completes, labelled with `job=image-build`,
+the image name, the build host, and success or failure status. Each
+run also ships a summary of built, failed and never attempted images
+as `job=image-build-summary`, which is the only record of an image
+that was never attempted.
+
+Neither variable has a default. With them unset, nothing is shipped
+and nothing says so, so a deployment that wants build logs has to set
+both -- `docs/build-host.md` describes where. The destination is
+deliberately not named here: this repository is public and the
+deployment that consumes it is not.
+
+Query them with the tenant your deployment uses:
 
 ```bash
-loki-query '{job="image-build"}' --tenant sfyow --since 24h
-loki-query '{job="image-build", image="debian-xfce:12"}' --tenant sfyow --since 7d
-loki-query '{job="image-build-summary"}' --tenant sfyow --since 24h
+loki-query '{job="image-build"}' --tenant <tenant> --since 24h
+loki-query '{job="image-build", image="debian-xfce:12"}' --tenant <tenant> --since 7d
+loki-query '{job="image-build-summary"}' --tenant <tenant> --since 24h
 ```
 
 ## Patches

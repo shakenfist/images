@@ -383,6 +383,16 @@ function build_one () {
     export DIB_GRUB_TIMEOUT=0
     export DIB_IMAGE_CACHE="/srv/sf-images/cache"
 
+    # diskimage-builder's scratch space, which defaults to /tmp. The
+    # build host's /tmp is a 2G tmpfs (33fl, since 2026-10-05), and the
+    # extract-image element repacks a downloaded cloud image there: a raw
+    # copy of the image plus a ~1.2G tarball, so the CentOS Stream 9
+    # repack ran out of space and failed every night from 2026-10-08.
+    # /srv/sf-images is on disk, beside the cache. DIB still mounts its
+    # own tmpfs for each build under this directory as it did under /tmp.
+    export TMP_DIR="/srv/sf-images/tmp"
+    mkdir -p "${TMP_DIR}"
+
     # Note the default here is "nofb nomodeset gfxpayload=text" which breaks
     # graphical consoles if you choose to install one later...
     export DIB_BOOTLOADER_DEFAULT_CMDLINE="net.ifnames=0 biosdevname=0 earlyprintk=ttyS0,115200 consoleblank=0"

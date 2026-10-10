@@ -130,3 +130,23 @@ The same line in Loki, for the whole run:
 ```
 {job="image-build"} |~ "Building elements:"
 ```
+
+## Scratch space is on disk, not /tmp
+
+`build.sh` sets diskimage-builder's `TMP_DIR` to `/srv/sf-images/tmp`.
+DIB defaults to `/tmp`, and on the build host `/tmp` is a 2G tmpfs
+(set by the 33fl deploy on 2026-10-05 and sized for other services).
+Most of a build never notices, because DIB mounts a separate tmpfs for
+each image's chroot. The exception is the `extract-image` element, which
+the CentOS Stream 9 image uses (and so may any other image built from an
+upstream cloud image): when a newer upstream image is downloaded, it
+repacks the image into a tarball under `TMP_DIR`. That
+needs a raw copy of the image plus a tarball of about 1.2G. On
+2026-10-08 a new CentOS Stream 9 image arrived, the repack failed with
+`gzip: stdout: No space left on device`, and because the repack only
+reruns while the cached image is newer than the cached tarball, every
+night after that failed the same way.
+
+A failed repack shows in `{job="image-build"}` as `Working in
+/tmp/tmp.*` followed by the ENOSPC line, and in the run summary as that
+one image failing while the rest build.

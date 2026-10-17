@@ -28,6 +28,9 @@ failed=0
 # zero, which is the block's own -- everything nested inside it is
 # indented.
 BLOCK="${WORK}/block.sh"
+# The $ is a literal in the sed pattern, matching the guard's own
+# "${SF_IMAGES_SELF_UPDATED", so single quotes are the point.
+# shellcheck disable=SC2016
 sed -n '/^if \[ "\${SF_IMAGES_SELF_UPDATED/,/^fi$/p' \
     "${HERE}/build.sh" > "${BLOCK}"
 

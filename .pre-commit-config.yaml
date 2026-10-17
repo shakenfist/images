@@ -1,0 +1,45 @@
+# Pre-commit hooks matching the shakenfist/development consistency
+# audit standards. ci.yml runs the same hooks on every pull request,
+# so a clone that never ran `pre-commit install` is still checked.
+#
+# Install with: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+#
+# renovate.json enables renovate's pre-commit manager, so the
+# revisions below arrive as pull requests rather than being bumped by
+# hand.
+
+repos:
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        args: ['-config-file', '.github/actionlint.yaml']
+
+  # tools/ only for now. build.sh carries over a hundred outstanding
+  # findings, and clearing them -- with a reason for each suppression
+  # rather than a blanket disable -- is its own piece of work, recorded
+  # in docs/plans/PLAN-image-build-modernisation.md. Adding it here
+  # before then would fail every commit.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        files: ^tools/
+        types_or: [sh, bash, shell]
+        args: ['-x']
+
+  # The diskimage-builder patches are excluded from the rewriting
+  # hooks: whitespace in a patch is part of the context it must match,
+  # so "fixing" it makes the patch fail to apply.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^diskimage-builder-patches/
+      - id: end-of-file-fixer
+        exclude: ^diskimage-builder-patches/
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1024']

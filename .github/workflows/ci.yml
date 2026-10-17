@@ -1,0 +1,41 @@
+name: CI
+
+# The checks every commit is meant to pass, run where they cannot be
+# skipped. .pre-commit-config.yaml is the whole gate; this workflow
+# exists so that something other than whoever remembers to runs it.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: [self-hosted, static]
+    timeout-minutes: 15
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-lint
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+
+      # A venv because the runners enforce PEP 668 and refuse a bare
+      # install. Under runner.temp, with --clear, because a fixed /tmp
+      # path is shared with every other job on the host.
+      - name: Install pre-commit
+        run: |
+          python3 -m venv --clear "${RUNNER_TEMP}/venv-lint"
+          "${RUNNER_TEMP}/venv-lint/bin/pip" install --quiet --disable-pip-version-check \
+              pre-commit
+
+      - name: Run pre-commit hooks
+        run: |
+          "${RUNNER_TEMP}/venv-lint/bin/pre-commit" run --all-files \
+              --show-diff-on-failure
+
+      - name: Clean up
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/venv-lint"

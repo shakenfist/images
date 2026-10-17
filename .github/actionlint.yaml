@@ -7,4 +7,9 @@
 self-hosted-runner:
   labels:
     - static
+    - vm
+    - debian-13
+    # Ephemeral runner sizes (see shakenfist/private-ci CI_SIZES). An
+    # unsized vm job defaults to xs, so jobs set one explicitly.
+    - s
     - claude-code

@@ -1,0 +1,47 @@
+name: Secret scanning
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+jobs:
+  gitleaks:
+    name: "Scan for committed secrets"
+    # gitleaks-action@v2 refuses to run on organization repos without
+    # a paid licence, so we invoke the upstream gitleaks binary
+    # directly. gitleaks is only packaged from Debian 13 (trixie)
+    # onward, hence the debian-13 runner.
+    runs-on: [self-hosted, vm, debian-13, s]
+    timeout-minutes: 15
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-gitleaks
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout code with full history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: sudo apt-get update && sudo apt-get install -y gitleaks
+
+      # --log-opts="HEAD" scopes the scan to this branch and the
+      # history behind it. Without it gitleaks scans every ref, which
+      # is not what anyone means by "scan this project's history": it
+      # pulls in every other branch, and gitleaks 8.16 attributes what
+      # it finds there to unrelated merge commits, so the findings
+      # cannot be triaged either. HEAD still reaches all of master, so
+      # nothing is given up.
+      - name: Run gitleaks
+        run: >-
+          gitleaks detect --source . --log-opts="HEAD" --redact
+          --verbose --no-banner

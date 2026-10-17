@@ -43,3 +43,11 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ['--maxkb=1024']
+
+  # The llm-context-lint-ci audit requires every repository with agent
+  # context to run skillsaw here and in CI. AGENTS.md is agent context,
+  # so a malformed or secret-bearing edit to it is caught at commit.
+  - repo: https://github.com/stbenjam/skillsaw
+    rev: v0.21.0
+    hooks:
+      - id: skillsaw

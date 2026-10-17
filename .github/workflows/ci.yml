@@ -31,10 +31,12 @@ jobs:
           "${RUNNER_TEMP}/venv-lint/bin/pip" install --quiet --disable-pip-version-check \
               pre-commit
 
+      # This runs every hook, skillsaw included, so this is also the
+      # CI half of the llm-context-lint-ci audit.
       - name: Run pre-commit hooks
         run: |
-          "${RUNNER_TEMP}/venv-lint/bin/pre-commit" run --all-files \
-              --show-diff-on-failure
+          PATH="${RUNNER_TEMP}/venv-lint/bin:${PATH}"
+          pre-commit run --all-files --show-diff-on-failure
 
       - name: Clean up
         if: always()

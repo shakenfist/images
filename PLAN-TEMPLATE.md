@@ -543,11 +543,14 @@ signal that would have caught it does not exist.
 The project-specific checks referred to above are:
 
 - [ ] `bash -n build.sh` parses, and `shellcheck build.sh` reports
-      no finding that was not already there. There is no
-      `.pre-commit-config.yaml` yet, and shellcheck is not
-      installed on every host -- `docker run --rm -v "$PWD:/mnt"
-      -w /mnt koalaman/shellcheck:stable build.sh` works anywhere
-      Docker does.
+      no finding that was not already there. `.pre-commit-config.yaml`
+      shellchecks `tools/` only: `build.sh` stays excluded until its
+      outstanding findings are cleared, so this is still a manual
+      check. shellcheck is not installed on every host --
+      `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable
+      build.sh` works anywhere Docker does.
+- [ ] `pre-commit run --all-files` and `tools/run-tests.sh` pass.
+      `ci.yml` runs both on every pull request.
 - [ ] Any change to `build.sh`, `elements/` or
       `block-device-compat.yaml` has had **at least one affected
       image actually built** before the change is proposed, and

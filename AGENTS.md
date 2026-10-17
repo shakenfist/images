@@ -1,12 +1,13 @@
 # Agents
 
-This repository does not currently use Claude Code skills or
-automated agents. Image builds are triggered manually or via cron
-on the image build server.
+This repository has no Claude Code skills. Pull requests are reviewed
+by the fleet's automated reviewer, from `ci.yml` and
+`pr-re-review.yml`. Image builds are triggered manually or via cron on
+the image build server.
 
-Run `pre-commit run --all-files` before committing. `ci.yml` runs the
-same hooks on every pull request, so a skipped local run only moves
-the failure later.
+Run `pre-commit run --all-files` and `tools/run-tests.sh` before
+committing. `ci.yml` runs both on every pull request, so a skipped
+local run only moves the failure later.
 
 ## Where to look
 

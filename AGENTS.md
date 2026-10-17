@@ -4,6 +4,10 @@ This repository does not currently use Claude Code skills or
 automated agents. Image builds are triggered manually or via cron
 on the image build server.
 
+Run `pre-commit run --all-files` before committing. `ci.yml` runs the
+same hooks on every pull request, so a skipped local run only moves
+the failure later.
+
 ## Where to look
 
 * [docs/build-host.md](docs/build-host.md) -- how the build host runs

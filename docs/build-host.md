@@ -77,8 +77,9 @@ After that the run keeps itself current.
 * A checkout that cannot be updated -- a local edit, a diverged
   branch, no network, or a repository git refuses to open at all --
   warns loudly and builds anyway. Yesterday's images beat no images,
-  and [the freshness watchdog](../tools/check-image-freshness.sh) is
-  what notices if it goes on.
+  and
+  [the freshness watchdog](https://github.com/shakenfist/images/blob/master/tools/check-image-freshness.sh)
+  is what notices if it goes on.
 * The re-exec matters. bash reads a script lazily, by byte offset, so
   replacing `build.sh` underneath a running `build.sh` resumes it at
   whatever text now sits at that offset. `tools/test-self-update.sh`

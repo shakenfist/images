@@ -14,9 +14,10 @@
 # the images are built, so it keeps working when that changes, and it
 # sees failures the builder cannot report on -- a broken publish
 # step, a full disk on the web host, an nginx serving a stale
-# directory. What it cannot see is an image that is fresh and wrong;
-# that is a different control and it is phase 2 of this repository's
-# plan.
+# directory. What it cannot see is an image that is fresh and wrong.
+# That is a different control: the verify-release element checks, as
+# each image is assembled, that it is the release it will be
+# published as. Nothing yet boots a published image to test it.
 #
 #   tools/check-image-freshness.sh [--max-age-hours N] [--base-url URL]
 #

@@ -6,6 +6,14 @@ This repository contains diskimage-builder elements and a build script
 (`build.sh`) for creating VM images used by Shaken Fist. Images are
 built daily and published to `images.shakenfist.com`.
 
+## Documentation
+
+- [Running the build host](https://github.com/shakenfist/images/blob/master/docs/build-host.md)
+  -- how the nightly build runs, keeps itself up to date, and is
+  configured.
+- [Plans](https://github.com/shakenfist/images/blob/master/docs/plans/index.md)
+  -- work in progress on this repository.
+
 ## Elements
 
 Custom diskimage-builder elements are in the `elements/` directory:
@@ -59,9 +67,11 @@ that was never attempted.
 
 Neither variable has a default. With them unset, nothing is shipped
 and nothing says so, so a deployment that wants build logs has to set
-both -- `docs/build-host.md` describes where. The destination is
-deliberately not named here: this repository is public and the
-deployment that consumes it is not.
+both -- the
+[build host documentation](https://github.com/shakenfist/images/blob/master/docs/build-host.md)
+describes where. The destination is deliberately not named here:
+this repository is public and the deployment that consumes it is
+not.
 
 Query them with the tenant your deployment uses:
 

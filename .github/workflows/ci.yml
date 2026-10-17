@@ -41,3 +41,20 @@ jobs:
       - name: Clean up
         if: always()
         run: rm -rf "${RUNNER_TEMP}/venv-lint"
+
+  # The automatic review, gated on lint passing: a job that is skipped
+  # because a dependency failed never starts the reusable workflow, so
+  # the needs list is the CI-passed gate. The reusable workflow skips
+  # itself on workflow_dispatch, which is how pr-retest.yml re-runs
+  # this file. The permissions block has to be here, because a
+  # cross-repository reusable workflow cannot grant itself more token
+  # scope than its caller has. Deliberately no secrets: inherit --
+  # nothing in the reviewer chain reads a secret.
+  automated_reviewer:
+    name: "Automated reviewer"
+    needs: [lint]
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    uses: shakenfist/actions/.github/workflows/pr-auto-review.yml@main

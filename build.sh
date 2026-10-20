@@ -86,6 +86,13 @@ original_args=("$@")
 # --no-push builds the images but does not publish them to
 # images.shakenfist.com or prune old ones there. Without it, every run
 # publishes, including one somebody started by hand to try something.
+#
+# Anything else that looks like a flag, and anything after the image
+# list, is refused rather than guessed at. A mistyped --no-push would
+# otherwise become the image list, and a --no-push written after the
+# list would be ignored -- either way the run publishes, which is the
+# one thing the operator asked it not to do. The list is a single
+# argument, so several images have to be quoted together.
 list_images_only=0
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -97,13 +104,25 @@ while [ $# -gt 0 ]; do
             do_not_push=1
             shift
             ;;
+        -*)
+            echo "Unknown flag: $1"
+            echo "Usage: $0 [--list-images] [--no-push] [\"image image ...\"]"
+            exit 2
+            ;;
         *)
             break
             ;;
     esac
 done
 
-images="$1"
+if [ $# -gt 1 ]; then
+    echo "Unexpected arguments after the image list: ${*:2}"
+    echo "Flags go first, and several images are quoted as one argument:"
+    echo "    $0 --no-push \"debian:13 rocky:9\""
+    exit 2
+fi
+
+images="${1:-}"
 if [ "$images" == "" ]; then
     images="ubuntu:22.04 ubuntu:24.04 centos:9-stream debian:12 debian-docker:12 debian-gnome:12 debian-xfce:12 debian:13 debian-docker:13 debian-gnome:13 debian-xfce:13 rocky:8 rocky:9 rocky:10"
 fi
@@ -328,6 +347,7 @@ PYEOF
 function finish_run() {
     # $1: why the run stopped before its end; empty if it did not
     # $2: optional log of what was running when it stopped
+    summary_started=1
     local stopped="${1:-}"
     local stop_log="${2:-}"
     local not_attempted=""
@@ -406,7 +426,14 @@ function finish_run() {
 # errtrace is not set, which is what we want: build_one runs with
 # errexit off by design and reports its own failures, and a grep that
 # matches nothing inside a command substitution is not a stop.
+#
+# A failure inside finish_run itself is the one stop that must not be
+# reconciled again: the images it had already recorded as not
+# attempted would be pushed a second time, beside a second summary
+# blaming the wrong thing. summary_started says the reconciliation has
+# begun, and the exit trap then only says the summary may be cut short.
 run_finished=0
+summary_started=0
 stop_reason=""
 stop_log=""
 
@@ -414,6 +441,12 @@ function on_exit() {
     local status=$?
     if [ "${run_finished}" = "1" ]; then
         return
+    fi
+    if [ "${summary_started}" = "1" ]; then
+        echo
+        echo "*** build.sh exited ${status} while writing the run summary," \
+            "so the summary above may be incomplete ***"
+        exit "${status}"
     fi
 
     set +e
@@ -563,7 +596,14 @@ function build_one () {
     echo "===================================================================="
     echo
 
-    rm -rf /srv/sf-images/output
+    # Each publishing build starts from an empty output tree, because
+    # the rsync below copies the whole of it: an image left there from
+    # an earlier build would be published again. --no-push publishes
+    # nothing, so it keeps every image the run builds for inspection
+    # instead of only the last.
+    if [ "${do_not_push}" = 0 ]; then
+        rm -rf /srv/sf-images/output
+    fi
     export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0
     export DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack, NoCloud"

@@ -83,9 +83,16 @@ sudo --preserve-env=SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT \
   if `SF_IMAGES_LOKI_URL` is missing.
 * Without `--no-push`, a run publishes what it builds to
   images.shakenfist.com and prunes old images there, exactly as the
-  nightly build does. `--no-push` leaves the image under
-  `/srv/sf-images/output` and says so in the summary. Flags go before
-  the image list.
+  nightly build does. `--no-push` leaves every image the run builds
+  under `/srv/sf-images/output/<label>/` and says so in the summary.
+  They stay there until the next publishing run, which empties the
+  directory before each image, so a `--no-push` of the whole list
+  needs disk for all fourteen at once.
+* Flags go before the image list, and several images are quoted as one
+  argument: `./build.sh --no-push "debian:13 rocky:9"`. An unknown
+  flag, or anything after the image list, is refused rather than
+  guessed at, because the guess that goes wrong is a run that
+  publishes.
 * The checkout still updates itself first, as below, and the restart
   keeps every argument you gave.
 

@@ -4,8 +4,9 @@
 #
 # The issue's first sentence is what sends a reader looking for the
 # fault, so it has to match the check's exit status: "not refreshed"
-# for stale images, "could not check" for unreachable ones. It used to
-# say "not refreshed" for both.
+# for stale images, "could not check" for unreachable ones, and "could
+# not run" when the check itself failed. It used to say "not
+# refreshed" for all of them.
 #
 # Runs anywhere, needs no network and no token:
 #
@@ -90,6 +91,20 @@ if grep -qF "found published images that have" "${WORK}/record"; then
     failed=$((failed + 1))
 else
     echo "PASS: unreachable images do not claim staleness"
+    passed=$((passed + 1))
+fi
+
+# A check that could not run has no UNREACHABLE lines to point at, so
+# its issue must not send the reader looking for them.
+echo "build.sh --list-images returned nothing." > "${WORK}/setup.txt"
+got=$(run file "${WORK}/setup.txt" https://example/run 3)
+check "a check that could not run says so" 0 "${got}" \
+    "could not run its check"
+if grep -qF -e "UNREACHABLE" -e "found published images that have" "${WORK}/record"; then
+    echo "FAIL: a check that could not run blames no image"
+    failed=$((failed + 1))
+else
+    echo "PASS: a check that could not run blames no image"
     passed=$((passed + 1))
 fi
 

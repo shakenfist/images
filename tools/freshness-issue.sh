@@ -13,9 +13,9 @@
 #
 # The exit status is check-image-freshness.sh's, and decides the
 # issue's opening sentence. Status 2 means some images could not be
-# checked and none were stale, which is a different fault from images
-# that have stopped being refreshed, and the first sentence is what
-# sends the reader looking.
+# checked and none were stale, and 3 means the check could not run at
+# all. Each is a different fault from images that have stopped being
+# refreshed, and the first sentence is what sends the reader looking.
 #
 # "file" opens one issue, or comments on the open one if there
 # already is one: an outage that lasts a week should not leave seven
@@ -78,6 +78,15 @@ case "${mode}" in
                     "marked UNREACHABLE below are the ones it could not"
                     "check; this may be the web host or the watchdog rather"
                     "than the build."
+                )
+                ;;
+            3)
+                finding=(
+                    "The freshness watchdog could not run its check, so"
+                    "this says nothing about whether the published images"
+                    "are fresh. The fault is in the watchdog or this"
+                    "repository rather than the build, and the report below"
+                    "says where it stopped."
                 )
                 ;;
             *)

@@ -227,6 +227,37 @@ else
     failed=$((failed + 1))
 fi
 
+# A failure inside the summary itself is not reconciled a second time:
+# each unattempted image is recorded once, not once per attempt at a
+# summary, and the exit trap says the summary may be cut short instead
+# of writing another one that blames the wrong thing.
+mkdir -p "${WORK}/nomktemp"
+cat > "${WORK}/nomktemp/mktemp" << 'EOF'
+#!/bin/sh
+echo "mktemp: stub refusing to run" >&2
+exit 1
+EOF
+chmod +x "${WORK}/nomktemp/mktemp"
+rm -f "${WORK}"/pushes/push-*.json
+got=0
+images="rocky:9" TEST_BUILT="" TEST_FAILED="" do_not_push=0 \
+    SF_IMAGES_LOKI_URL="http://127.0.0.1:${port}/loki/api/v1/push" \
+    PATH="${WORK}/nomktemp:${PATH}" \
+    run_case "${WORK}/tail.sh" > "${WORK}/out" 2>&1 || got=$?
+rocky_pushes=$( { grep -l '"image": "rocky:9"' \
+    "${WORK}"/pushes/push-*.json 2>/dev/null || true; } | wc -l)
+if [ "${got}" = 1 ] && [ "${rocky_pushes}" = 1 ] \
+        && grep -qF "while writing the run summary" "${WORK}/out" \
+        && ! grep -qF "Stopped:" "${WORK}/out"; then
+    echo "PASS: a failing summary is not written twice"
+    passed=$((passed + 1))
+else
+    echo "FAIL: a failing summary is not written twice: exit ${got}," \
+        "${rocky_pushes} rocky:9 records, wanted 1"
+    sed 's/^/    /' "${WORK}/out"
+    failed=$((failed + 1))
+fi
+
 # --no-push says so in the summary, so a run that published nothing
 # is not read as one that published.
 rm -f "${WORK}"/pushes/push-*.json

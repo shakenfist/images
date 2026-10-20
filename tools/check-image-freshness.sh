@@ -30,15 +30,24 @@
 #
 # 3 is kept apart from 2 because they send the reader to different
 # places: 2 to the web host or the network, 3 to this script or the
-# checkout it runs in. Anything that stops the script unexpectedly
-# under errexit is a 3 as well, through the ERR trap below, so a bug
-# here can never be reported as a stale image.
+# checkout it runs in. Anything that stops the script unexpectedly is
+# a 3 as well, so a bug here can never be reported as a stale image.
+# The ERR trap below names the failing line when errexit fires; the
+# EXIT trap catches what bypasses it -- an unbound variable, or an
+# arithmetic error -- which bash otherwise ends with status 1, the
+# status for "stale". Only the verdict at the end sets finished.
 
 set -o errexit
 set -o nounset
 set -o pipefail
 
+finished=0
 trap 'echo "The freshness check failed at line ${LINENO}: ${BASH_COMMAND}"; exit 3' ERR
+trap 'status=$?
+      if [ "${finished}" = 0 ] && [ "${status}" != 0 ] && [ "${status}" != 3 ]; then
+          echo "The freshness check stopped unexpectedly with status ${status}."
+          exit 3
+      fi' EXIT
 
 # Parsing an RFC 1123 date with date(1) depends on the locale, and
 # the runner's locale is not ours to assume.
@@ -183,6 +192,7 @@ echo "${checked} images checked, ${stale} stale or missing," \
 # Every image is reported before any exit, so one stale image does
 # not hide the state of the others -- an alarm that names one image
 # when fourteen are down teaches people the wrong thing.
+finished=1
 if [ "${stale}" -gt 0 ]; then
     exit 1
 fi

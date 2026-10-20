@@ -160,6 +160,24 @@ printf '#!/bin/sh\nexit 0\n' > "${WORK}/badbuild/build.sh"
 check "build.sh --list-images printing nothing" 3 "returned nothing" \
     "${WORK}/badbuild/tools/check-image-freshness.sh" --base-url "${BASE_URL}"
 
+# An unbound variable ends bash with status 1 without running the ERR
+# trap, so this is the stop only the EXIT trap can turn into a 3. The
+# copy gains one, just before the check begins.
+mkdir -p "${WORK}/unbound/tools"
+cp "${HERE}/build.sh" "${WORK}/unbound/"
+# The ${...} is meant literally: it is the text planted in the copy.
+# shellcheck disable=SC2016
+sed 's/^max_age_seconds=/: "${no_such_variable}"\n&/' "${CHECK}" \
+    > "${WORK}/unbound/tools/check-image-freshness.sh"
+chmod +x "${WORK}/unbound/tools/check-image-freshness.sh"
+if ! grep -q 'no_such_variable' "${WORK}/unbound/tools/check-image-freshness.sh"; then
+    echo "FAIL: could not plant an unbound variable in the check"
+    failed=$((failed + 1))
+else
+    check "an unbound variable is 3, not stale" 3 "stopped unexpectedly with status 1" \
+        "${WORK}/unbound/tools/check-image-freshness.sh" --base-url "${BASE_URL}"
+fi
+
 echo
 echo "${passed} passed, ${failed} failed"
 [ "${failed}" -eq 0 ]

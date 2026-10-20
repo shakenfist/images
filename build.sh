@@ -1,5 +1,11 @@
 #!/bin/bash -e
 
+# Set again here because the shebang is skipped by "bash build.sh".
+# The exit trap's stop reporting and the preamble's PIPESTATUS check
+# both depend on errexit, and without it a failed apt-get or patch
+# would carry on silently into the builds.
+set -o errexit
+
 # Obsolete image builds (not built by default, but still here just in case):
 #   centos:7 centos:8-stream
 #   debian:10
@@ -601,8 +607,18 @@ function build_one () {
     # an earlier build would be published again. --no-push publishes
     # nothing, so it keeps every image the run builds for inspection
     # instead of only the last.
+    #
+    # That makes the removal load bearing, so it is checked: errexit is
+    # off in here, and a removal that failed quietly would publish
+    # whatever an earlier --no-push run left behind -- the images the
+    # operator asked not to publish.
     if [ "${do_not_push}" = 0 ]; then
-        rm -rf /srv/sf-images/output
+        if ! rm -rf /srv/sf-images/output || [ -e /srv/sf-images/output ]; then
+            echo "BUILD FAILED: could not empty /srv/sf-images/output"
+            push_log_to_loki "${output}.log" "${label}" "failure" \
+                "Could not empty /srv/sf-images/output, so publishing would have copied whatever it still held."
+            return 1
+        fi
     fi
     export ELEMENTS_PATH=elements:diskimage-builder/diskimage_builder/elements
     export DIB_APT_MINIMAL_CREATE_INTERFACES=0

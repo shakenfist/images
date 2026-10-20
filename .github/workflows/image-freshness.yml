@@ -55,12 +55,14 @@ jobs:
       # after a pipe into tee, because that only worked while the
       # step's shell had no pipefail: adding "shell: bash" or a
       # defaults.run.shell would have turned it on and failed the
-      # step.
+      # step. stderr goes into the report too, because when the check
+      # itself breaks, bash's own diagnostic is the explanation the
+      # issue needs.
       - name: Check published image freshness
         id: check
         run: |
           rc=0
-          tools/check-image-freshness.sh > freshness-report.txt || rc=$?
+          tools/check-image-freshness.sh > freshness-report.txt 2>&1 || rc=$?
           cat freshness-report.txt
           echo "rc=${rc}" >> "${GITHUB_OUTPUT}"
 

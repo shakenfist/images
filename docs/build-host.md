@@ -87,7 +87,8 @@ sudo --preserve-env=SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT \
   under `/srv/sf-images/output/<label>/` and says so in the summary.
   They stay there until the next publishing run, which empties the
   directory before each image, so a `--no-push` of the whole list
-  needs disk for all fourteen at once.
+  needs disk for all fourteen at once. File names carry only the date,
+  so rebuilding an image the same day replaces the earlier one.
 * Flags go before the image list, and several images are quoted as one
   argument: `./build.sh --no-push "debian:13 rocky:9"`. An unknown
   flag, or anything after the image list, is refused rather than

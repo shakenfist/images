@@ -15,6 +15,18 @@ on:
     # 09:00 UTC. The nightly build starts around 03:00 UTC and runs
     # serially through fourteen images, so this asks the question
     # once the answer has settled rather than halfway through.
+    #
+    # That is when it is asked for, not when it runs. GitHub delays
+    # scheduled runs under load, and in October 2026 they were
+    # starting between 12:50 and 18:55 UTC. That costs nothing against
+    # a 72 hour threshold, but it is not a timing anything should be
+    # tightened against.
+    #
+    # GitHub also disables a scheduled workflow in a repository that
+    # has had no commits for 60 days, saying so only in the Actions
+    # tab. This repository goes quiet for longer than that, so if this
+    # watchdog has been silent for a while, check that it is still
+    # enabled before trusting the silence.
     - cron: '0 9 * * *'
 
 jobs:
@@ -35,18 +47,32 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # This step has to succeed whatever the check finds. The steps
+      # below carry an implicit success() in their conditions, so a
+      # failure here would skip filing the issue -- the watchdog would
+      # see the stale images and say nothing. The check's status is
+      # captured with "|| rc=$?" rather than read from PIPESTATUS
+      # after a pipe into tee, because that only worked while the
+      # step's shell had no pipefail: adding "shell: bash" or a
+      # defaults.run.shell would have turned it on and failed the
+      # step. stderr goes into the report too, because when the check
+      # itself breaks, bash's own diagnostic is the explanation the
+      # issue needs.
       - name: Check published image freshness
         id: check
         run: |
-          tools/check-image-freshness.sh | tee freshness-report.txt
-          echo "rc=${PIPESTATUS[0]}" >> "${GITHUB_OUTPUT}"
+          rc=0
+          tools/check-image-freshness.sh > freshness-report.txt 2>&1 || rc=$?
+          cat freshness-report.txt
+          echo "rc=${rc}" >> "${GITHUB_OUTPUT}"
 
       - name: File or update the freshness issue
         if: steps.check.outputs.rc != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: tools/freshness-issue.sh file freshness-report.txt "${RUN_URL}"
+          CHECK_RC: ${{ steps.check.outputs.rc }}
+        run: tools/freshness-issue.sh file freshness-report.txt "${RUN_URL}" "${CHECK_RC}"
 
       - name: Resolve the freshness issue
         if: steps.check.outputs.rc == '0'

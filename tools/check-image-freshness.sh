@@ -25,10 +25,29 @@
 #   0  every image is fresh
 #   1  at least one image is stale or missing
 #   2  at least one image could not be checked, and none were stale
+#   3  the check itself could not run, so it says nothing about the
+#      images
+#
+# 3 is kept apart from 2 because they send the reader to different
+# places: 2 to the web host or the network, 3 to this script or the
+# checkout it runs in. Anything that stops the script unexpectedly is
+# a 3 as well, so a bug here can never be reported as a stale image.
+# The ERR trap below names the failing line when errexit fires; the
+# EXIT trap catches what bypasses it -- an unbound variable, or an
+# arithmetic error -- which bash otherwise ends with status 1, the
+# status for "stale". Only the verdict at the end sets finished.
 
 set -o errexit
 set -o nounset
 set -o pipefail
+
+finished=0
+trap 'echo "The freshness check failed at line ${LINENO}: ${BASH_COMMAND}"; exit 3' ERR
+trap 'status=$?
+      if [ "${finished}" = 0 ] && [ "${status}" != 0 ] && [ "${status}" != 3 ]; then
+          echo "The freshness check stopped unexpectedly with status ${status}."
+          exit 3
+      fi' EXIT
 
 # Parsing an RFC 1123 date with date(1) depends on the locale, and
 # the runner's locale is not ours to assume.
@@ -51,7 +70,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
     echo "Usage: $0 [--max-age-hours N] [--base-url URL]"
-    exit 2
+    exit 3
 }
 
 while [ $# -gt 0 ]; do
@@ -78,19 +97,22 @@ done
 
 if ! [ "${MAX_AGE_HOURS}" -gt 0 ] 2>/dev/null; then
     echo "--max-age-hours must be a positive integer."
-    exit 2
+    exit 3
 fi
 
 if [ ! -x "${HERE}/build.sh" ]; then
     echo "No build.sh beside ${HERE}/tools, so there is no image list"
     echo "to check. Run this from a checkout of shakenfist/images."
-    exit 2
+    exit 3
 fi
 
-images="$("${HERE}/build.sh" --list-images)"
+if ! images="$("${HERE}/build.sh" --list-images)"; then
+    echo "build.sh --list-images failed."
+    exit 3
+fi
 if [ -z "${images}" ]; then
     echo "build.sh --list-images returned nothing."
-    exit 2
+    exit 3
 fi
 
 max_age_seconds=$(( MAX_AGE_HOURS * 3600 ))
@@ -124,8 +146,11 @@ for image in ${images}; do
             ;;
     esac
 
+    # grep finding nothing is an answer, not a failure: without the
+    # "|| true" pipefail made it end the whole check with status 1,
+    # reporting a stale image instead of reaching the branch below.
     modified=$(printf '%s' "${headers}" \
-        | grep -i '^last-modified:' \
+        | { grep -i '^last-modified:' || true; } \
         | head -1 \
         | cut -d' ' -f2- \
         | tr -d '\r')
@@ -167,6 +192,7 @@ echo "${checked} images checked, ${stale} stale or missing," \
 # Every image is reported before any exit, so one stale image does
 # not hide the state of the others -- an alarm that names one image
 # when fourteen are down teaches people the wrong thing.
+finished=1
 if [ "${stale}" -gt 0 ]; then
     exit 1
 fi

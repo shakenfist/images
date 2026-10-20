@@ -280,7 +280,7 @@ per `docs/plans/index.md`.
 | 3. Failure files an issue | | Not started |
 | 4. Freshness watchdog | acccd2b (#5) | Complete |
 | 5. Repository standards | | Not started |
-| 6. Push audit | | Not started |
+| 6. Push audit | | In progress |
 
 Phases 1 and 4 are deliberately ordered before and independent of
 Phase 2. Both are worth having even if the mechanism question is
@@ -530,7 +530,32 @@ Each item is separable; none blocks the others.
 
 ### Phase 6. Push audit
 
-Status: Not started
+Status: In progress
+
+The audit was run on 2026-10-08 by the push audit phase of
+shakenfist/development's `PLAN-image-supply-chain.md`, over the
+accumulated diff of #5, #6, #7, #8, #9 and #14, rather than by this
+repository: there is still no `PUSH-AUDIT.md` here, and that plan's
+checklist plus the three shapes below stood in for one. It filed #15
+(a README leak, since fixed) and #16, seven findings that all sat in
+paths that report a failure rather than cause one, and all failed
+quietly. #16 is resolved in one pull request:
+
+* the preamble before the first image build -- apt, the
+  diskimage-builder pull and patching -- now reports a stop through
+  an exit trap, with the output that explains it;
+* a stale `temp.qcow2` can no longer be published under a later
+  image's label;
+* the freshness watchdog's check step no longer depends on the
+  step's shell having no `pipefail`, and its issue no longer calls an
+  unreachable image stale;
+* a run without `SF_IMAGES_LOKI_URL` says so, `docs/build-host.md`
+  documents both variables, and the manual build documents passing
+  them through `sudo` and gains `--no-push`.
+
+The one finding not fixed in code is that GitHub disables a
+scheduled workflow after 60 days without a commit; it is recorded
+under future work below, and in a comment on the schedule.
 
 Per the push audit shared block above. There is no `PUSH-AUDIT.md`
 in this repository, so this phase either creates one -- the better
@@ -607,6 +632,14 @@ into it.
   is 166GB. Retention keeps the seven newest builds per image,
   which is a reasonable default nobody has revisited against what
   the images are actually used for.
+* **A watchdog that cannot be switched off by quiet.** GitHub
+  disables the `image-freshness.yml` schedule after 60 days with no
+  commits to this repository, and says so only in the Actions tab.
+  This repository is often quiet for that long. Phase 2 moving the
+  build into Actions may change the answer; until then the options
+  are a periodic commit, which is noise, or a second watcher outside
+  this repository that notices the watchdog has stopped reporting,
+  and the second is a design decision rather than a patch.
 * **Publishing checksums and signatures.** Consumers currently
   fetch `latest.qcow2` over HTTPS with no way to verify what they
   got.

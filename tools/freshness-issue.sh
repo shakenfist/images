@@ -8,8 +8,14 @@
 # test or run by hand. Here it can be executed against a scratch
 # repository before anyone trusts it at three in the morning.
 #
-#   tools/freshness-issue.sh file <report-file> <run-url>
+#   tools/freshness-issue.sh file <report-file> <run-url> <check-exit-status>
 #   tools/freshness-issue.sh resolve <run-url>
+#
+# The exit status is check-image-freshness.sh's, and decides the
+# issue's opening sentence. Status 2 means some images could not be
+# checked and none were stale, and 3 means the check could not run at
+# all. Each is a different fault from images that have stopped being
+# refreshed, and the first sentence is what sends the reader looking.
 #
 # "file" opens one issue, or comments on the open one if there
 # already is one: an outage that lasts a week should not leave seven
@@ -27,7 +33,7 @@ LABEL="image-freshness"
 TITLE="Published images are not being refreshed"
 
 usage() {
-    echo "Usage: $0 file <report-file> <run-url>"
+    echo "Usage: $0 file <report-file> <run-url> <check-exit-status>"
     echo "       $0 resolve <run-url>"
     exit 2
 }
@@ -48,14 +54,48 @@ open_issue() {
 
 case "${mode}" in
     file)
-        [ $# -eq 2 ] || usage
+        [ $# -eq 3 ] || usage
         report_file="$1"
         run_url="$2"
+        check_rc="$3"
 
         if [ ! -f "${report_file}" ]; then
             echo "No report at ${report_file}."
             exit 2
         fi
+
+        case "${check_rc}" in
+            1)
+                finding=(
+                    "The freshness watchdog found published images that have"
+                    "not been refreshed."
+                )
+                ;;
+            2)
+                finding=(
+                    "The freshness watchdog could not check some published"
+                    "images, and found none of the others stale. The images"
+                    "marked UNREACHABLE below are the ones it could not"
+                    "check; this may be the web host or the watchdog rather"
+                    "than the build."
+                )
+                ;;
+            3)
+                finding=(
+                    "The freshness watchdog could not run its check, so"
+                    "this says nothing about whether the published images"
+                    "are fresh. The fault is in the watchdog or this"
+                    "repository rather than the build, and the report below"
+                    "says where it stopped."
+                )
+                ;;
+            *)
+                finding=(
+                    "The freshness watchdog exited ${check_rc}, which it does"
+                    "not document. The report below is everything it said."
+                )
+                ;;
+        esac
 
         # gh issue create fails outright when the label does not
         # exist, which would lose the report at exactly the moment it
@@ -71,8 +111,7 @@ case "${mode}" in
         # as code and the run URL would stop being a link.
         body=$(
             printf '%s\n' \
-                "The freshness watchdog found published images that have" \
-                "not been refreshed." \
+                "${finding[@]}" \
                 "" \
                 "Run: ${run_url}" \
                 "" \

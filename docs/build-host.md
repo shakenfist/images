@@ -18,6 +18,26 @@ logs are published beside the image itself, as
 `<image>/<name>-<datestamp>.qcow2.log`, and shipped to Loki under
 `{job="image-build"}` on the `sfyow` tenant.
 
+## Log shipping needs two variables in root's crontab
+
+The cron line above carries no environment, but root's crontab on the
+build host does. Shipping to Loki happens only when both of these are
+set:
+
+| Variable | Meaning |
+|----------|---------|
+| `SF_IMAGES_LOKI_URL` | Loki's push endpoint (`.../loki/api/v1/push`). Unset means nothing is shipped. |
+| `SF_IMAGES_LOKI_TENANT` | The `X-Scope-OrgID` to push as. Optional to `build.sh`, but the build host's Loki is multi-tenant. |
+
+They are crontab environment lines (`NAME=value` above the job), and
+the deploy in the 33fl repository manages them, so the destination
+is a property of the deployment rather than of this public
+repository. Neither has a default. A run without `SF_IMAGES_LOKI_URL`
+prints a warning when it starts and then ships nothing, and under cron
+that warning goes wherever the rest of cron's output goes: nowhere. If
+`{job="image-build"}` has gone quiet while images are still being
+published, check these first.
+
 ## The run summary is in Loki, not in cron mail
 
 The run ends with a summary of what it was asked to build and what
@@ -34,9 +54,48 @@ behind -- so it is shipped to Loki as a stream of its own:
 
 `result` is `failure` when any image failed or was not attempted,
 matching the run's exit status. The stream carries no `image` label,
-so queries against `{job="image-build"}` see only per image logs. An
-absence of this stream for a night means the run did not reach its
-end at all.
+so queries against `{job="image-build"}` see only per image logs.
+
+A run that stops before its end still sends a summary. Preparing the
+build host -- apt, the diskimage-builder pull from upstream `master`,
+applying `diskimage-builder-patches/` -- is where that usually
+happens, and in that case the summary has a `Stopped:` line, the last
+forty lines the preparation printed (the error is normally among
+them), and every requested image as not attempted. A stop anywhere
+else outside an image build names the line of `build.sh` and the
+command that failed. So an absence of this stream for a night now
+means the run never started, was killed outright, or could not reach
+Loki -- not that it failed early.
+
+```
+{job="image-build-summary"} |= "Stopped:"
+```
+
+## Building by hand
+
+```
+sudo --preserve-env=SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT \
+    ./build.sh --no-push debian:13
+```
+
+* `sudo` resets the environment, so without `--preserve-env` the
+  Loki variables you exported do not reach `build.sh`. The run warns
+  if `SF_IMAGES_LOKI_URL` is missing.
+* Without `--no-push`, a run publishes what it builds to
+  images.shakenfist.com and prunes old images there, exactly as the
+  nightly build does. `--no-push` leaves every image the run builds
+  under `/srv/sf-images/output/<label>/` and says so in the summary.
+  They stay there until the next publishing run, which empties the
+  directory before each image, so a `--no-push` of the whole list
+  needs disk for all fourteen at once. File names carry only the date,
+  so rebuilding an image the same day replaces the earlier one.
+* Flags go before the image list, and several images are quoted as one
+  argument: `./build.sh --no-push "debian:13 rocky:9"`. An unknown
+  flag, or anything after the image list, is refused rather than
+  guessed at, because the guess that goes wrong is a run that
+  publishes.
+* The checkout still updates itself first, as below, and the restart
+  keeps every argument you gave.
 
 ## The checkout updates itself, but only since 2026-09-14
 

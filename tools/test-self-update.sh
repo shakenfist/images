@@ -45,12 +45,22 @@ fi
 # script to see which copy of it ran. Writing the marker after the
 # block is what distinguishes "restarted and ran the new code" from
 # "restarted and ran the old code again".
+#
+# build.sh keeps its arguments in original_args and then consumes its
+# flags before the block runs, so the stand-in does the same: "shift
+# $#" is the flag parsing, and the ARGS line shows what the copy that
+# finally ran was given.
 make_script() {
     # $1 destination, $2 marker text
     {
         echo '#!/bin/bash -e'
+        # shellcheck disable=SC2016
+        echo 'original_args=("$@")'
+        echo 'shift $#'
         cat "${BLOCK}"
         echo "echo \"MARKER $2\""
+        # shellcheck disable=SC2016
+        echo 'echo "ARGS ${original_args[*]}"'
     } > "$1"
     chmod +x "$1"
 }
@@ -93,8 +103,9 @@ advance_origin() {
 # shows up as a script that died, and a test harness that dies with it
 # reports nothing.
 run_in_checkout() {
+    # $@ arguments for build.sh
     local rc=0
-    ( cd "${WORK}/checkout" && timeout 30 ./build.sh ) > "${WORK}/out" 2>&1 || rc=$?
+    ( cd "${WORK}/checkout" && timeout 30 ./build.sh "$@" ) > "${WORK}/out" 2>&1 || rc=$?
     echo "${rc}" > "${WORK}/rc"
 }
 
@@ -165,6 +176,15 @@ advance_origin
 run_in_checkout
 check 'behind origin runs the new code' v2 1 'Restarting'
 check 'behind origin does not rerun the old' v1 0 -
+
+# The restart hands the new copy the arguments this one was given,
+# flags included. Restarting on whatever was left after the flags were
+# parsed would drop --no-push, and a manual test build on a checkout
+# that happened to be behind would publish.
+setup
+advance_origin
+run_in_checkout --no-push debian:13
+check 'restart keeps the arguments' v2 1 '^ARGS --no-push debian:13$'
 
 # ... and exactly once. A missing guard would exec forever; the
 # timeout in run_in_checkout is the backstop if this ever regresses.

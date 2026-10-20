@@ -64,6 +64,14 @@
 
 do_not_push=0
 
+# Kept before the flags below are consumed, because the self-update
+# re-executes this script and has to hand the new copy exactly what
+# this one was given. Restarting with the image list but without
+# --no-push would publish what the operator asked not to.
+original_args=("$@")
+
+# Flags come before the image list.
+#
 # --list-images prints the list this script would build and exits.
 # tools/check-image-freshness.sh reads the list from here rather than
 # keeping its own copy: a watchdog with a second copy of the list
@@ -74,11 +82,26 @@ do_not_push=0
 # as an unprivileged user on a host with none of the build
 # dependencies installed. That is what lets the watchdog run
 # anywhere, which is the whole point of the watchdog.
+#
+# --no-push builds the images but does not publish them to
+# images.shakenfist.com or prune old ones there. Without it, every run
+# publishes, including one somebody started by hand to try something.
 list_images_only=0
-if [ "$1" == "--list-images" ]; then
-    list_images_only=1
-    shift
-fi
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --list-images)
+            list_images_only=1
+            shift
+            ;;
+        --no-push)
+            do_not_push=1
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 images="$1"
 if [ "$images" == "" ]; then
@@ -152,7 +175,7 @@ if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ -d .git ]; then
             echo "===================================================================="
             echo
             export SF_IMAGES_SELF_UPDATED=1
-            exec "$0" "$@"
+            exec "$0" "${original_args[@]}"
         fi
     else
         echo
@@ -167,50 +190,18 @@ if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ -d .git ]; then
     fi
 fi
 
-# Ensure we're up to date, and have diskimage-builder installed.
-apt-get update
-apt-get dist-upgrade -y
-apt-get install -y git python3 python3-dev python3-pip python3-wheel rsync xz-utils podman
-pip3 install --break-system-packages bindep
-
-# We have to install diskimage-builder this way because the Ubuntu dependancies
-# are wrong for the packaged version.
-if [ ! -e diskimage-builder ]; then
-    git clone https://github.com/openstack/diskimage-builder
-else
-    cd diskimage-builder
-    git stash
-    git pull origin master
-    cd ..
-fi
-
-cd diskimage-builder
-
-for patch in ../diskimage-builder-patches/*.patch; do
-    echo "Applying patch $patch"
-    git apply $patch
-done
-
-apt-get install -y `bindep --list_all newline`
-python3 setup.py develop
-cd ..
-
-# diskimage-builder requires the hostname be known, or it gets confused
-hostname=$(hostname)
-if [ $(grep -c $hostname /etc/hosts) -lt 1 ]; then
-    sed -i "s/127.0.0.1\tlocalhost/127.0.0.1\tlocalhost $hostname/" /etc/hosts
-fi
-
-# Build images
-mkdir -p /srv/sf-images/cache
-datestamp=$(date +%Y%m%d)
-
 # Where build logs are shipped, read from the environment so the
 # destination is a property of the deployment rather than of the
 # build. Unset means logs are not shipped at all, which is the right
 # default for anyone who clones this repository and runs it: a build
 # should not post to somebody else's log aggregator because the
-# address was baked into the script.
+# address was baked into the script. The run says so when it starts,
+# below; see docs/build-host.md for where the build host sets them.
+#
+# Everything from here to the traps is defined before the preamble
+# that prepares the build host, so that a preamble failure can still
+# be reported. tools/test-run-summary.sh extracts this stretch of the
+# file by its first and last lines.
 LOKI_URL="${SF_IMAGES_LOKI_URL:-}"
 LOKI_TENANT="${SF_IMAGES_LOKI_TENANT:-}"
 
@@ -244,6 +235,8 @@ function push_log_to_loki() {
     local build_result="$3"
     local note="${4:-}"
 
+    # Quiet on purpose: the run warns once, at the start, rather than
+    # once per image.
     if [ -z "${LOKI_URL}" ]; then
         return 0
     fi
@@ -314,6 +307,202 @@ except Exception as e:
     print('Warning: failed to push logs to Loki: %s' % e)
 PYEOF
 }
+
+# Reconcile what was asked for against what actually happened, and
+# record it. Sets run_result.
+#
+# An image named in the request that reached neither list was never
+# attempted: the run stopped before it, or nothing here knows how to
+# build it. That state used to produce no record at all, which is why
+# the sixteen day outage could not be read afterwards even though
+# logs were being shipped the whole time -- the images that mattered
+# were the ones that said nothing.
+#
+# The comparison is against the list as given, so a partial label
+# typed by hand ("debian" rather than "debian:13") reports as not
+# attempted. The default list is exact.
+#
+# The summary itself is shipped to Loki as well as printed. cron runs
+# this on a host with no MTA, so stdout goes nowhere, and the summary
+# is the only place the run says what it did not do.
+function finish_run() {
+    # $1: why the run stopped before its end; empty if it did not
+    # $2: optional log of what was running when it stopped
+    local stopped="${1:-}"
+    local stop_log="${2:-}"
+    local not_attempted=""
+    local image summary_log
+
+    for image in ${images}; do
+        if echo " ${built_images} " | grep -qF " ${image} "; then
+            continue
+        fi
+        if echo " ${failed_images} " | grep -qF " ${image} "; then
+            continue
+        fi
+        not_attempted="${not_attempted} ${image}"
+        push_log_to_loki \
+            "/srv/sf-images/output/${image}/not-attempted.log" \
+            "${image}" "failure" \
+            "${image} was requested but never attempted; the run ended before reaching it."
+    done
+
+    summary_log=$(mktemp)
+    {
+        echo
+        echo "===================================================================="
+        echo "Build summary"
+        echo "===================================================================="
+        printf '%-15s%s\n' 'Requested:' "${images}"
+        if [ -n "${stopped}" ]; then
+            printf '%-15s%s\n' 'Stopped:' "${stopped}"
+        fi
+        if [ "${do_not_push}" != 0 ]; then
+            printf '%-15s%s\n' 'Published:' 'nothing; --no-push was given'
+        fi
+        if [ -n "${built_images}" ]; then
+            printf '%-15s%s\n' 'Built:' "${built_images# }"
+        fi
+        if [ -n "${failed_images}" ]; then
+            printf '%-15s%s\n' 'Failed:' "${failed_images# }"
+        fi
+        if [ -n "${not_attempted}" ]; then
+            printf '%-15s%s\n' 'Not attempted:' "${not_attempted# }"
+        fi
+        if [ -z "${stopped}${built_images}${failed_images}${not_attempted}" ]; then
+            echo "Nothing to do."
+        fi
+        echo
+        if [ -n "${stop_log}" ] && [ -s "${stop_log}" ]; then
+            echo "The last lines printed before it stopped:"
+            echo
+            tail -n 40 "${stop_log}"
+            echo
+        fi
+    } > "${summary_log}"
+    cat "${summary_log}"
+
+    if [ -n "${stopped}" ] || [ -n "${failed_images}" ] || [ -n "${not_attempted}" ]; then
+        run_result="failure"
+    else
+        run_result="success"
+    fi
+    LOKI_JOB="image-build-summary" push_log_to_loki "${summary_log}" "" "${run_result}"
+    rm -f "${summary_log}"
+}
+
+# A run that stops before it reaches finish_run at the bottom of this
+# file still produces a summary, saying where it stopped.
+#
+# Before this, anything that ended the run under errexit outside a
+# build -- an apt-get, the diskimage-builder pull, a patch that no
+# longer applies -- left no Loki record, no per image log and, with no
+# MTA on the build host, nothing at all. That is the shape of the
+# 2026-09-15 failure, and the only control that noticed it was the
+# freshness watchdog, three days later.
+#
+# The ERR trap only notes where errexit fired; the EXIT trap does the
+# reporting. Neither is inherited by functions or subshells, because
+# errtrace is not set, which is what we want: build_one runs with
+# errexit off by design and reports its own failures, and a grep that
+# matches nothing inside a command substitution is not a stop.
+run_finished=0
+stop_reason=""
+stop_log=""
+
+function on_exit() {
+    local status=$?
+    if [ "${run_finished}" = "1" ]; then
+        return
+    fi
+
+    set +e
+    if [ -z "${stop_reason}" ]; then
+        stop_reason="build.sh exited ${status}"
+        if [ -n "${failed_line:-}" ]; then
+            stop_reason="${stop_reason} at line ${failed_line}: ${failed_command:-}"
+        fi
+    fi
+    echo
+    echo "*** The run stopped before it finished: ${stop_reason} ***"
+    finish_run "${stop_reason}" "${stop_log}"
+    if [ -n "${stop_log}" ]; then
+        rm -f "${stop_log}"
+    fi
+    exit "${status}"
+}
+
+trap 'failed_line=${LINENO}; failed_command=${BASH_COMMAND}' ERR
+trap on_exit EXIT
+
+if [ -z "${LOKI_URL}" ]; then
+    echo "WARNING: SF_IMAGES_LOKI_URL is not set, so no build log and no"
+    echo "run summary will be shipped from this run. Under sudo, pass it"
+    echo "through with --preserve-env=SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT."
+    echo
+fi
+
+# Prepare the build host: packages, and diskimage-builder with our
+# patches applied.
+#
+# This is the part of the run most likely to stop it. diskimage-builder
+# is pulled from upstream master every night, so one of the patches in
+# diskimage-builder-patches/ failing to apply is a matter of when.
+#
+# The block runs as a subshell on the left of a pipe. errexit stays in
+# force inside it -- unlike build_one it is not an "if" condition --
+# so its first failure ends it, and PIPESTATUS carries that status past
+# tee. tee keeps a copy of what it printed for the summary, because the
+# command the exit trap can name ("git apply $patch") is much less use
+# than the error git printed. Being a subshell, a cd inside it cannot
+# leak out, and nothing it assigns survives it.
+preamble_log=$(mktemp)
+{
+    apt-get update
+    apt-get dist-upgrade -y
+    apt-get install -y git python3 python3-dev python3-pip python3-wheel rsync xz-utils podman
+    pip3 install --break-system-packages bindep
+
+    # We have to install diskimage-builder this way because the Ubuntu dependancies
+    # are wrong for the packaged version.
+    if [ ! -e diskimage-builder ]; then
+        git clone https://github.com/openstack/diskimage-builder
+    else
+        cd diskimage-builder
+        git stash
+        git pull origin master
+        cd ..
+    fi
+
+    cd diskimage-builder
+
+    for patch in ../diskimage-builder-patches/*.patch; do
+        echo "Applying patch $patch"
+        git apply $patch
+    done
+
+    apt-get install -y `bindep --list_all newline`
+    python3 setup.py develop
+    cd ..
+
+    # diskimage-builder requires the hostname be known, or it gets confused
+    hostname=$(hostname)
+    if [ $(grep -c $hostname /etc/hosts) -lt 1 ]; then
+        sed -i "s/127.0.0.1\tlocalhost/127.0.0.1\tlocalhost $hostname/" /etc/hosts
+    fi
+
+    mkdir -p /srv/sf-images/cache
+} 2>&1 | tee "${preamble_log}"
+preamble_status=${PIPESTATUS[0]}
+if [ "${preamble_status}" -ne 0 ]; then
+    stop_reason="preparing the build host failed (exit ${preamble_status})"
+    stop_log="${preamble_log}"
+    exit "${preamble_status}"
+fi
+rm -f "${preamble_log}"
+
+# Build images
+datestamp=$(date +%Y%m%d)
 
 # Build one image, or record why we could not.
 #
@@ -462,6 +651,23 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
     if [ ! -z ${5} ]; then
 	export DIB_SF_AGENT_PACKAGE="${5}"
 	export build_args="${build_args} sf-agent"
+    fi
+
+    # Nothing may be at the path disk-image-create writes to before it
+    # runs. The cleanup after the transcode below is skipped by every
+    # failure between here and there, and by a run killed part way, so
+    # a temp.qcow2 left by an earlier image is otherwise still here.
+    # Were a later disk-image-create to exit zero and print its success
+    # marker without writing its output, the transcode would publish
+    # that earlier image under this one's label. Of everything this
+    # function can do wrong, that is the one nobody could undo: a
+    # build that publishes nothing is recoverable, one that publishes
+    # the wrong thing is not. With the file gone, the same misbehaviour
+    # fails the transcode instead.
+    if ! rm -f temp.qcow2; then
+        echo "BUILD FAILED: could not remove a stale temp.qcow2"
+        push_log_to_loki "${output}.log" "${label}" "failure"
+        return 1
     fi
 
     set -x
@@ -726,67 +932,8 @@ if [ $(echo $images | grep -c "debian-xfce:13") -gt 0 ]; then
     build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras xfce-desktop" shakenfist-agent
 fi
 
-# Reconcile what was asked for against what actually happened.
-#
-# An image named in the request that reached neither list was never
-# attempted: the run stopped before it, or nothing here knows how to
-# build it. That state used to produce no record at all, which is why
-# the sixteen day outage could not be read afterwards even though
-# logs were being shipped the whole time -- the images that mattered
-# were the ones that said nothing.
-#
-# The comparison is against the list as given, so a partial label
-# typed by hand ("debian" rather than "debian:13") reports as not
-# attempted. The default list is exact.
-#
-# The summary itself is shipped to Loki as well as printed. cron runs
-# this on a host with no MTA, so stdout goes nowhere, and the summary
-# is the only place the run says what it did not do.
-not_attempted=""
-for image in ${images}; do
-    if echo " ${built_images} " | grep -qF " ${image} "; then
-        continue
-    fi
-    if echo " ${failed_images} " | grep -qF " ${image} "; then
-        continue
-    fi
-    not_attempted="${not_attempted} ${image}"
-    push_log_to_loki \
-        "/srv/sf-images/output/${image}/not-attempted.log" \
-        "${image}" "failure" \
-        "${image} was requested but never attempted; the run ended before reaching it."
-done
-
-summary_log=$(mktemp)
-{
-    echo
-    echo "===================================================================="
-    echo "Build summary"
-    echo "===================================================================="
-    printf '%-15s%s\n' 'Requested:' "${images}"
-    if [ -n "${built_images}" ]; then
-        printf '%-15s%s\n' 'Built:' "${built_images# }"
-    fi
-    if [ -n "${failed_images}" ]; then
-        printf '%-15s%s\n' 'Failed:' "${failed_images# }"
-    fi
-    if [ -n "${not_attempted}" ]; then
-        printf '%-15s%s\n' 'Not attempted:' "${not_attempted# }"
-    fi
-    if [ -z "${built_images}${failed_images}${not_attempted}" ]; then
-        echo "Nothing to do."
-    fi
-    echo
-} > "${summary_log}"
-cat "${summary_log}"
-
-if [ -n "${failed_images}" ] || [ -n "${not_attempted}" ]; then
-    run_result="failure"
-else
-    run_result="success"
-fi
-LOKI_JOB="image-build-summary" push_log_to_loki "${summary_log}" "" "${run_result}"
-rm -f "${summary_log}"
+finish_run
+run_finished=1
 
 # The run's exit status. Cron mail and any future workflow both key
 # off this, so it has to survive the per-image isolation above: one

@@ -48,12 +48,17 @@ required by downstream tooling such as Kolla-Ansible.
 ## Building Images
 
 ```bash
-# Build all images
+# Build all images, and publish them to images.shakenfist.com
 sudo ./build.sh
 
-# Build a specific image
-sudo ./build.sh "ubuntu:24.04"
+# Build a specific image without publishing it
+sudo ./build.sh --no-push "ubuntu:24.04"
 ```
+
+`sudo` drops exported variables, including the two that turn on log
+forwarding below; the
+[build host documentation](https://github.com/shakenfist/images/blob/master/docs/build-host.md#building-by-hand)
+shows how to pass them through.
 
 ## Log Forwarding
 
@@ -65,9 +70,9 @@ run also ships a summary of built, failed and never attempted images
 as `job=image-build-summary`, which is the only record of an image
 that was never attempted.
 
-Neither variable has a default. With them unset, nothing is shipped
-and nothing says so, so a deployment that wants build logs has to set
-both -- the
+Neither variable has a default. With them unset nothing is shipped,
+and the run says so only in a warning when it starts, so a deployment
+that wants build logs has to set both -- the
 [build host documentation](https://github.com/shakenfist/images/blob/master/docs/build-host.md)
 describes where. The destination is deliberately not named here:
 this repository is public and the deployment that consumes it is

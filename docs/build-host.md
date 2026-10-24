@@ -4,6 +4,13 @@ Every published image comes from one machine running one cron job.
 This page is what you need to know about that machine when a change
 to this repository does not seem to have taken effect.
 
+There is also `.github/workflows/image-build.yml`, started by hand from
+the Actions tab, which builds each image on an ephemeral CI VM by
+running `build.sh` there. It does not yet replace the cron job below,
+which is still what refreshes the site every night. A dispatch
+publishes only from `master` with its `publish` input set; otherwise it
+builds and discards the result.
+
 ## How the nightly build runs
 
 ```

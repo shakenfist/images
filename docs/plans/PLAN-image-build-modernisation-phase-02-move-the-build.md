@@ -356,8 +356,9 @@ Each item can be checked by running something:
   --jq .deployment_branch_policy` shows custom branch policies, and
   `gh api repos/shakenfist/images/environments/images-publish/deployment-branch-policies
   --jq '.branch_policies[].name'` prints only `master`.
-- [ ] `git grep -nE 'home\.stillhq|192\.168\.|BEGIN OPENSSH'` in this
-  repository prints nothing.
+- [ ] `git grep -nE 'home\.stillhq|192\.168\.|BEGIN OPENSSH' -- ':!docs/plans'`
+  prints nothing. The plans are excluded because this line matches
+  itself; read the plan diff by eye instead.
 - [ ] A scheduled (not dispatched) run of `image-build.yml` built and
   published every image in `build.sh --list-images`. Its URL is under
   *Results*, and `tools/check-image-freshness.sh` exits 0 the following
@@ -415,6 +416,39 @@ the diff only removes findings.
 * rrsync must run without `-ro`, `-wo`, `-no-del` and `-munge`.
   Retention lists and deletes, and `latest.qcow2` has to arrive as a
   real symlink.
+
+**2b's brief was refined before it ran, in two ways:**
+
+* On `master`, the build job always takes the `images-publish`
+  environment, whether or not it publishes. The Loki secrets live
+  there, and 2d's first run, with publishing off, has to show a
+  summary arriving in Loki (D9). Every other ref takes no environment.
+  Publishing still needs both `master` and the input.
+* The boolean input is named `publish` rather than `push`, so the
+  "no push trigger" grep in the Definition of done cannot match an
+  input key.
+
+**Still open after 2b, for 2d to settle:**
+
+* Whether an empty `environment:` name means "no environment" at
+  runtime. actionlint accepts it. The first dispatch from a branch
+  will show whether GitHub does.
+* Debian's default sudoers drops `HTTP(S)_PROXY`, so under `sudo`
+  `build.sh`'s downloads and its Loki push probably leave through the
+  hypervisor's NAT rather than the proxy. That may be fine. 2d step 2
+  is where it shows.
+* The host in `IMAGES_PUBLISH_KNOWN_HOSTS` has to be written exactly
+  as the host in `IMAGES_PUBLISH_TARGET`. That belongs to 2c.
+
+**2b added `.github/actionlint.yaml`'s `m` label.** actionlint rejects
+a `runs-on` label it has not been told about.
+
+**A private hostname reached this file and was removed before
+anything was pushed.** The survey table named the CI proxy's
+hostname. The Definition of done grep would have caught it, but it
+also matched the author email in an old DIB patch, so the grep now
+looks for `home\.stillhq` instead of `stillhq`. The planning commit
+was rewritten locally, so the hostname never reached GitHub.
 
 ## Results
 

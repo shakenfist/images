@@ -144,6 +144,8 @@ jobs:
           SF_IMAGES_LOKI_TENANT: ${{ secrets.SF_IMAGES_LOKI_TENANT }}
         run: |
           if [ "${PUBLISH}" = "true" ]; then
+            # Unset, build.sh would publish to a local directory on this throwaway VM.
+            [ -n "${SF_IMAGES_PUBLISH_TARGET:-}" ] || { echo 'Publishing, but SF_IMAGES_PUBLISH_TARGET is empty.' >&2; exit 2; }
             sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update "${IMAGE}"
           else
             sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update --no-push "${IMAGE}"

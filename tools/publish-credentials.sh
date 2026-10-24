@@ -35,13 +35,15 @@
 #
 # Nothing here prints a secret, and it must not run under "set -x".
 #
-# "cleanup" shreds the key and the host key. The VM is deleted after
+# "cleanup" shreds the key and the host key, falling back to rm when
+# shred fails, then removes their directory. The VM is deleted after
 # the job anyway, so this is for the case where that assumption stops
 # holding, and it succeeds with nothing to do if setup never ran.
 #
 # Requires RUNNER_TEMP, and for setup GITHUB_ENV, which Actions sets.
-# Exits 0 on success, 1 if the key does not parse, and 2 if anything
-# required is missing or malformed.
+# Exits 0 on success, 1 if the key does not parse or cleanup could not
+# remove everything, and 2 if anything required is missing or
+# malformed.
 
 set -o errexit
 set -o nounset
@@ -129,12 +131,18 @@ case "$1" in
         ;;
     cleanup)
         if [ -d "${DIR}" ]; then
+            # Removal is attempted whatever fails along the way, and
+            # what decides the exit is whether anything is left after.
             for file in "${KEY}" "${KNOWN_HOSTS}"; do
                 if [ -f "${file}" ]; then
-                    shred -u "${file}"
+                    shred -u "${file}" || rm -f "${file}" || true
                 fi
             done
-            rm -rf "${DIR}"
+            rm -rf "${DIR}" || true
+            if [ -e "${DIR}" ]; then
+                echo "Could not remove ${DIR}; publishing credentials may be left on disk." >&2
+                exit 1
+            fi
             echo "Publishing credentials removed."
         else
             echo "No publishing credentials to remove."

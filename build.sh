@@ -785,8 +785,19 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
     # line's status is tee's and is essentially always zero. The check
     # that used to sit below read $? of the "if" above it and could
     # never fire. PIPESTATUS carries the real answer and has to be read
-    # immediately, before any other command overwrites it.
-    DIB_RELEASE=$2 /usr/local/bin/disk-image-create $4 ${build_args} -u -o temp.qcow2 | tee ${output}.log
+    # immediately, before any other command overwrites it. env is the
+    # first command of the pipeline and exits with whatever
+    # disk-image-create did, so PIPESTATUS[0] is the build's status.
+    #
+    # env -u keeps the publishing variables out of the build's
+    # environment. Every element hook and chroot scriptlet would
+    # otherwise inherit them, and one that printed its environment would
+    # write the private publish target into this log, which is
+    # published beside the image and is not masked the way the Actions
+    # log is. It keeps them out of the build and its log; it does not
+    # stop root code on this machine reading them some other way.
+    env -u SF_IMAGES_PUBLISH_TARGET -u RSYNC_RSH DIB_RELEASE="$2" \
+        /usr/local/bin/disk-image-create $4 ${build_args} -u -o temp.qcow2 | tee ${output}.log
     dib_status=${PIPESTATUS[0]}
     set +x
 

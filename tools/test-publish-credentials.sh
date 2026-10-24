@@ -219,6 +219,46 @@ if [ "${rc}" != 0 ]; then
 fi
 result "cleanup with nothing set up succeeds" "${problem}"
 
+# A shred that fails, as it would on a file whose ownership the
+# root-run build changed. Removal falls back to rm, so nothing is left
+# and cleanup succeeds.
+mkdir -p "${WORK}/noshred"
+printf '#!/bin/sh\nexit 1\n' > "${WORK}/noshred/shred"
+chmod +x "${WORK}/noshred/shred"
+
+reset
+rc=$(setup "${GOOD_KEY}" "${KNOWN_HOSTS_LINE}" "${TARGET}")
+rc=$(run cleanup PATH="${WORK}/noshred:${PATH}")
+problem=""
+if [ -e "${DIR}/id" ] || [ -e "${DIR}/known_hosts" ]; then
+    problem="a file was left behind"
+elif [ -e "${DIR}" ]; then
+    problem="the directory was left behind"
+elif [ "${rc}" != 0 ]; then
+    problem="exit ${rc}, wanted 0"
+fi
+result "cleanup with a failing shred still removes everything" "${problem}"
+
+# Neither shred nor rm can remove anything. Cleanup has to say so and
+# fail, not report the credentials removed.
+mkdir -p "${WORK}/noremove"
+printf '#!/bin/sh\nexit 1\n' > "${WORK}/noremove/shred"
+printf '#!/bin/sh\nexit 1\n' > "${WORK}/noremove/rm"
+chmod +x "${WORK}/noremove/shred" "${WORK}/noremove/rm"
+
+reset
+rc=$(setup "${GOOD_KEY}" "${KNOWN_HOSTS_LINE}" "${TARGET}")
+rc=$(run cleanup PATH="${WORK}/noremove:${PATH}")
+problem=""
+if [ ! -e "${DIR}/id" ]; then
+    problem="the key was removed anyway, so this tests nothing"
+elif [ "${rc}" != 1 ]; then
+    problem="exit ${rc}, wanted 1"
+elif grep -q 'credentials removed' "${WORK}/out"; then
+    problem="cleanup reported the credentials removed"
+fi
+result "cleanup that cannot remove the credentials fails" "${problem}"
+
 echo
 echo "${passed} passed, ${failed} failed"
 [ "${failed}" -eq 0 ]

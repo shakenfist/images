@@ -227,6 +227,101 @@ elif [ "$(grep -c '^CALL' "${SHIM_LOG}")" != 1 ]; then
 fi
 result "a failed image rsync sends no latest.qcow2" "${problem}"
 
+# The image arrives but its latest.qcow2 does not. The publish fails
+# and says which half, and the site's latest.qcow2 still leads to the
+# image it led to before, not to one this run could not confirm.
+OLD_IMAGE="debian-13-sfagent-20261024.qcow2"
+reset
+make_build
+mkdir -p "${LABEL_DIR}"
+echo "image 20261024" > "${LABEL_DIR}/${OLD_IMAGE}"
+ln -s "${OLD_IMAGE}" "${LABEL_DIR}/latest.qcow2"
+rc=$(RSYNC_SHIM_FAIL_CALL=2 run publish_image "${OUTPUT_DIR}/${IMAGE}")
+problem=""
+if [ "${rc}" = 0 ]; then
+    problem="the publish reported success"
+elif ! grep -q 'BUILD FAILED.*latest\.qcow2' "${WORK}/out"; then
+    problem="no BUILD FAILED line naming latest.qcow2"
+elif [ "$(grep -c '^CALL' "${SHIM_LOG}")" != 2 ]; then
+    problem="wanted two rsync calls, got $(grep -c '^CALL' "${SHIM_LOG}")"
+elif [ "$(cat "${LABEL_DIR}/${IMAGE}" 2>/dev/null)" != "image 20261025" ]; then
+    problem="the image did not arrive, so this tests nothing"
+elif [ "$(readlink "${LABEL_DIR}/latest.qcow2")" != "${OLD_IMAGE}" ]; then
+    problem="latest.qcow2 no longer leads to ${OLD_IMAGE}"
+fi
+result "a failed latest.qcow2 rsync fails the publish and keeps the old latest" "${problem}"
+
+# --- the publish target ---------------------------------------------
+
+# The normalisation alone, sourced with each form of target.
+TARGET_CODE="${WORK}/target.sh"
+sed -n '/^publish_target=/,/^esac$/p' "${BUILD}" > "${TARGET_CODE}"
+
+target_case() {
+    # $1 the target given, or '-' for unset; $2 what it should become
+    local got
+    # shellcheck disable=SC2016
+    if [ "$1" = '-' ]; then
+        got=$(env -u SF_IMAGES_PUBLISH_TARGET \
+            bash -ec 'source "$1"; printf "%s" "${publish_target}"' _ "${TARGET_CODE}" 2> "${WORK}/out")
+    else
+        got=$(SF_IMAGES_PUBLISH_TARGET="$1" \
+            bash -ec 'source "$1"; printf "%s" "${publish_target}"' _ "${TARGET_CODE}" 2> "${WORK}/out")
+    fi
+    rm -f "${SHIM_LOG}"
+    if [ "${got}" = "$2" ]; then
+        result "publish target '$1' becomes '$2'" ""
+    else
+        result "publish target '$1' becomes '$2'" "got '${got}'"
+    fi
+}
+
+target_case /x/y /x/y/
+target_case /x/y/ /x/y/
+target_case host: host:
+target_case u@host:/p u@host:/p/
+target_case - /srv/www/images.shakenfist.com/
+
+# --- the build's environment ----------------------------------------
+
+# disk-image-create runs without the publishing variables. What its
+# hooks print goes into the per-image log, which is published, so a
+# target that reached them could end up public. The build line is
+# extracted from build_one with the PIPESTATUS read after it, and run
+# with a disk-image-create that prints its environment and exits 7,
+# which has to come back as the build's status through env and tee.
+# It runs under env -i, so the log holds nothing from the caller.
+DIB_CODE="${WORK}/dib.sh"
+{
+    # shellcheck disable=SC2016
+    echo 'output="$1"; status_file="$2"; build_args=""; set -- unused trixie unused elements'
+    sed -n '/^[^#]*DIB_RELEASE=/,/^ *dib_status=/p' "${BUILD}" \
+        | sed "s|/usr/local/bin/disk-image-create|${WORK}/bin/disk-image-create|"
+    # shellcheck disable=SC2016
+    echo 'echo "${dib_status}" > "${status_file}"'
+} > "${DIB_CODE}"
+printf '#!/bin/bash\nenv\nexit 7\n' > "${WORK}/bin/disk-image-create"
+chmod +x "${WORK}/bin/disk-image-create"
+
+reset
+problem=""
+status=""
+if ! grep -q "${WORK}/bin/disk-image-create" "${DIB_CODE}" || ! grep -q '^ *dib_status=' "${DIB_CODE}"; then
+    problem="could not extract the disk-image-create line from ${BUILD}"
+else
+    (cd "${WORK}/tmp" && env -i PATH="${PATH}" SF_IMAGES_PUBLISH_TARGET=secret-target RSYNC_RSH=secret-rsh \
+        bash "${DIB_CODE}" "${WORK}/dib" "${WORK}/dib.status" > /dev/null 2> "${WORK}/out") || true
+    status="$(cat "${WORK}/dib.status" 2>/dev/null || true)"
+    if ! grep -q '^DIB_RELEASE=trixie$' "${WORK}/dib.log"; then
+        problem="the build's environment did not reach its log, so this tests nothing"
+    elif grep -q 'secret-target\|secret-rsh' "${WORK}/dib.log"; then
+        problem="a publishing variable reached disk-image-create and its log"
+    elif [ "${status}" != 7 ]; then
+        problem="the build's status came back as '${status}', wanted 7"
+    fi
+fi
+result "disk-image-create runs without the publishing variables" "${problem}"
+
 # --- retention ------------------------------------------------------
 
 # A site holding one dated image a day, each with its log, the newest
@@ -362,6 +457,41 @@ make_site "${NINE[@]}"
 rm "${LABEL_DIR}/latest.qcow2"
 rc=$(run prune_published "${OUTPUT_DIR}/${IMAGE}")
 refusal "a listing without latest.qcow2 deletes nothing" "${NINE[@]}"
+
+# A listing that fails deletes nothing, and says so.
+reset
+make_site "${NINE[@]}"
+rc=$(RSYNC_SHIM_FAIL_CALL=1 run prune_published "${OUTPUT_DIR}/${IMAGE}")
+problem=""
+want="README $(names "${NINE[@]}")latest.qcow2 "
+if [ "${rc}" = 0 ]; then
+    problem="the sweep reported success"
+elif ! grep -q 'WARNING: could not list' "${WORK}/out"; then
+    problem="no warning was printed"
+elif [ "$(grep -c '^CALL' "${SHIM_LOG}")" != 1 ]; then
+    problem="rsync was called again after the listing failed"
+elif [ "$(listing)" != "${want}" ]; then
+    problem="the site holds '$(listing)', wanted '${want}'"
+fi
+result "a failed listing deletes nothing and warns" "${problem}"
+
+# The deleting rsync fails. The shim fails without acting, so the site
+# is as it was, and the sweep has to say it failed.
+reset
+make_site "${NINE[@]}"
+rc=$(RSYNC_SHIM_FAIL_CALL=2 run prune_published "${OUTPUT_DIR}/${IMAGE}")
+problem=""
+want="README $(names "${NINE[@]}")latest.qcow2 "
+if ! grep '^CALL' "${SHIM_LOG}" | sed -n 2p | grep -q -- '--delete'; then
+    problem="the second rsync was not the --delete, so this tests nothing"
+elif [ "${rc}" = 0 ]; then
+    problem="the sweep reported success"
+elif ! grep -q 'WARNING: removing old images' "${WORK}/out"; then
+    problem="no warning was printed"
+elif [ "$(listing)" != "${want}" ]; then
+    problem="the site holds '$(listing)', wanted '${want}'"
+fi
+result "a failed --delete rsync reports failure and warns" "${problem}"
 
 echo
 echo "${passed} passed, ${failed} failed"

@@ -1,0 +1,156 @@
+name: Image build
+
+# Builds the images on the fleet's ephemeral CI VMs, one image to a
+# job, by running build.sh exactly as the build host's cron does. The
+# build logic stays in build.sh; this file only decides where it runs,
+# with what, and whether it publishes.
+#
+# For now this is started by hand only, and the build host's cron is
+# still what keeps the site fresh. A dispatch with publish off builds
+# and throws the result away, which is how a build.sh change is tried
+# on a branch before it merges.
+
+permissions:
+  contents: read
+
+# Deliberately no pull_request or push trigger, now or later. Every VM
+# runner holds the key that reaches every node in the CI mesh, so code
+# a fork can get onto one reaches the whole mesh, and a build job runs
+# that code as root. Only someone with write access can dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      images:
+        description: >-
+          Images to build, separated by spaces, such as "debian:13 rocky:9".
+          Empty builds build.sh's default list.
+        type: string
+        default: ''
+      # Named publish rather than push so that nothing in this file
+      # can be mistaken for a push trigger.
+      publish:
+        description: >-
+          Publish to images.shakenfist.com and prune old images there.
+          Only honoured on master.
+        type: boolean
+        default: false
+
+# One run per ref at a time, and a second waits rather than cancelling
+# the first: cancelling a publishing run part way leaves some images
+# new and some old, and two runs publishing the same label race each
+# other's retention.
+concurrency:
+  group: image-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  list:
+    name: List the images to build
+    # Small, quick and changes nothing, which is what the static
+    # runners are for. It needs only bash and python3.
+    runs-on: [self-hosted, static]
+    timeout-minutes: 10
+    outputs:
+      images: ${{ steps.matrix.outputs.images }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The input goes through the environment rather than being
+      # written into the script, so whatever was typed into it is data
+      # and never shell. The assignment is on a line of its own because
+      # a failing command substitution inside echo's arguments would
+      # not fail the step.
+      - name: Turn the image list into a build matrix
+        id: matrix
+        env:
+          IMAGES: ${{ inputs.images }}
+        run: |
+          matrix="$(tools/image-matrix.sh "${IMAGES}")"
+          echo "images=${matrix}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build ${{ matrix.image }}
+    needs: list
+    # This line is the declared builder OS. It is the same Debian
+    # release the build host runs, deliberately, so that moving the
+    # build changes where the images are made and not what they are
+    # made with: any difference afterwards is down to the environment,
+    # not a new release. Moving to a newer builder is a one-line change
+    # here, reviewed like any other. m has 200 GB of disk, plenty for
+    # one image.
+    runs-on: [self-hosted, vm, debian-13, m]
+    # A first guess for a cold-cache build of the desktop images, to be
+    # replaced by about twice the slowest image once real runs have
+    # been measured. It bounds a hung build, which would otherwise hold
+    # a VM the rest of the fleet's CI needs for six hours.
+    timeout-minutes: 120
+    # The publishing credential and the Loki settings are secrets in the
+    # images-publish environment, which only master may deploy from.
+    # On master the job always takes it, publishing or not, so that a
+    # build that publishes nothing still ships its logs and summary to
+    # Loki. Anywhere else it takes none, because asking for it would
+    # fail the job rather than skip the secrets. An empty name means no
+    # environment.
+    environment: ${{ github.ref == 'refs/heads/master' && 'images-publish' || '' }}
+    strategy:
+      # One image failing says nothing about the others, so the rest
+      # carry on. Four at a time keeps a full run from taking fourteen
+      # VMs away from the fleet's CI at once.
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        image: ${{ fromJSON(needs.list.outputs.images) }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Publishing needs both master and the publish input. The ref
+      # check is here as well as in the environment's branch policy so
+      # that a dispatch from a branch shows this step as skipped, not
+      # as a failed environment check. It writes the key and the
+      # pinned host key, and passes RSYNC_RSH and the rsync target to
+      # the steps after it, so neither exists on a run that does not
+      # publish. No set -x anywhere near it.
+      - name: Set up the publishing credentials
+        if: github.ref == 'refs/heads/master' && inputs.publish
+        env:
+          IMAGES_PUBLISH_SSH_KEY: ${{ secrets.IMAGES_PUBLISH_SSH_KEY }}
+          IMAGES_PUBLISH_KNOWN_HOSTS: ${{ secrets.IMAGES_PUBLISH_KNOWN_HOSTS }}
+          SF_IMAGES_PUBLISH_TARGET: ${{ secrets.IMAGES_PUBLISH_TARGET }}
+        run: tools/publish-credentials.sh setup
+
+      # sudo resets the environment, so every variable build.sh needs
+      # is named in --preserve-env; one that is assumed to survive is
+      # one that silently does not. It also resets PATH, which is why
+      # build.sh is run as ./build.sh from the checkout, the step's
+      # working directory. The publishing pair is unset on a run that
+      # does not publish, and the Loki pair is empty off master; an
+      # unset variable is simply not passed, and with no Loki URL
+      # build.sh warns that it will ship nothing.
+      #
+      # --no-self-update because this checkout is already exactly the
+      # commit the run was asked to build; the update would pull master
+      # over a branch.
+      - name: Build ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          PUBLISH: ${{ github.ref == 'refs/heads/master' && inputs.publish }}
+          SF_IMAGES_LOKI_URL: ${{ secrets.SF_IMAGES_LOKI_URL }}
+          SF_IMAGES_LOKI_TENANT: ${{ secrets.SF_IMAGES_LOKI_TENANT }}
+        run: |
+          if [ "${PUBLISH}" = "true" ]; then
+            # Unset, build.sh would publish to a local directory on this throwaway VM.
+            [ -n "${SF_IMAGES_PUBLISH_TARGET:-}" ] || { echo 'Publishing, but SF_IMAGES_PUBLISH_TARGET is empty.' >&2; exit 2; }
+            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update "${IMAGE}"
+          else
+            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update --no-push "${IMAGE}"
+          fi
+
+      - name: Remove the publishing credentials
+        if: always() && github.ref == 'refs/heads/master' && inputs.publish
+        run: tools/publish-credentials.sh cleanup

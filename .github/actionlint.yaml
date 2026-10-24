@@ -12,4 +12,5 @@ self-hosted-runner:
     # Ephemeral runner sizes (see shakenfist/private-ci CI_SIZES). An
     # unsized vm job defaults to xs, so jobs set one explicitly.
     - s
+    - m
     - claude-code

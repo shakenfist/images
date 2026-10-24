@@ -65,6 +65,15 @@ check "a flag after the image list is refused" 2 - \
     --list-images debian:13 --no-push
 check "several unquoted images are refused" 2 - \
     --list-images debian:13 rocky:9
+# --no-self-update is what a CI checkout passes, beside --no-push when
+# it is not publishing, so it has to be accepted in any order among
+# the flags and refused after the list like the others.
+check "--no-self-update is taken" 0 "debian:13" \
+    --list-images --no-self-update debian:13
+check "--no-self-update in any order among the flags" 0 "debian:13 rocky:9" \
+    --no-self-update --no-push --list-images "debian:13 rocky:9"
+check "--no-self-update after the image list is refused" 2 - \
+    --list-images debian:13 --no-self-update
 
 if "${BUILD}" --list-images | grep -q 'debian:13'; then
     echo "PASS: the default list is printed"

@@ -270,16 +270,18 @@ impossible and long enough to survive one bad night.
 ## Execution
 
 Phases are sections of this file rather than separate phase files,
-per `docs/plans/index.md`.
+per `docs/plans/index.md`. The exception is Phase 2, which is large
+enough and spans 33fl, so it has its own file, as the template's note
+for this repository allows.
 
 | Phase | Merged | Status |
 |-------|--------|--------|
 | 0. Planning foundation | 39303ef (#3) | Complete |
 | 1. One failure stops one image | 47ed141 (#6), 3423343 (#12) | Complete |
-| 2. Move the build mechanism | | Not started |
+| 2. Move the build mechanism ([phase file](PLAN-image-build-modernisation-phase-02-move-the-build.md)) | | In progress |
 | 3. Failure files an issue | | Not started |
 | 4. Freshness watchdog | acccd2b (#5) | Complete |
-| 5. Repository standards | | Not started |
+| 5. Repository standards | a75db0b (#20) | In progress |
 | 6. Push audit | | In progress |
 
 Phases 1 and 4 are deliberately ordered before and independent of
@@ -406,10 +408,23 @@ summary names only the broken image.
 
 ### Phase 2. Move the build mechanism
 
-Status: Not started
+Status: In progress
 Effort: high. Model: opus.
-Blocked on: Q1 and Q2 above, and specifically on the transfer-cost
-unknown in Q1.
+Plan: [PLAN-image-build-modernisation-phase-02-move-the-build.md](PLAN-image-build-modernisation-phase-02-move-the-build.md)
+
+**Q1 was answered on 2026-10-24.** Build on the sfcbr CI cluster's
+ephemeral VM runners and push to sfyow over the WAN; the link is
+fast enough and a slow copy is acceptable. That is Q1's default, so
+the fallback below it is not taken. The phase is large and crosses
+into 33fl, so it has its own file, which holds the survey, the
+decisions and the step plan. In outline: one
+`[self-hosted, vm, debian-13, m]` job per image, publishing through
+an rrsync-confined key that only sfcbr's egress address can use;
+the sfyow cron is retired on the day the schedule starts; and a
+Grafana alert outside this repository covers GitHub disabling the
+schedule, which the move would otherwise make silent.
+
+The original brief, kept for the record:
 
 Implement the answers to Q1 and Q2: a GitHub Actions workflow with
 a matrix job per image and `fail-fast: false`, on a runner whose
@@ -516,31 +531,43 @@ decides.
 
 ### Phase 5. Repository standards
 
-Status: Not started
+Status: In progress
 Effort: medium. Model: sonnet.
+Merged: a75db0b (#20), which landed most of this phase from the
+fleet consistency work rather than from this plan.
 
 Close the gap between this repository and the rest of the fleet.
 Each item is separable; none blocks the others.
 
-* `.pre-commit-config.yaml` running shellcheck and trailing
-  whitespace checks, plus a CI workflow running the same.
-* The outstanding shellcheck findings in `build.sh`. This plan said
-  91; it was 136 on master before Phase 1 and 125 after, so re-count
-  rather than trusting any of those numbers. Expect to suppress some
+**Corrected 2026-10-24 by Phase 2's survey.** This section was
+written before #20, and most of its list is done:
+
+* Done in #20: `.pre-commit-config.yaml` (shellcheck over `tools/`,
+  whitespace, actionlint, skillsaw), `ci.yml` running it and
+  `tools/run-tests.sh` on every pull request, renovate, gitleaks,
+  CodeQL over the workflows, and the review bot triggers.
+* Done outside this repository: it is now in shakenfist/development's
+  audit matrix, scoped to `eol-distro` only, by
+  `PLAN-image-supply-chain.md` phase 6. #20 measured it at 30 pass
+  and 2 fail with that scope lifted.
+
+What remains:
+
+* The outstanding shellcheck findings in `build.sh`, which
+  `.pre-commit-config.yaml` still excludes. The count was 126 at
+  8a179b6; re-count rather than trusting it. Expect to suppress some
   deliberately; a suppression with a reason is a result, a blanket
   disable is not.
-* `AGENTS.md` is four lines and says image builds are triggered
-  "manually or via cron", which Phase 2 makes wrong. Update it
-  when Phase 2 lands, not before.
-* Decide whether this repository joins the fleet consistency
-  audit. It is on the excluded list as a historical archive, which
-  it demonstrably is not -- it is actively built from every night
-  and the fleet's CI depends on its output. Changing that is a
-  change to shakenfist/development's `docs/audits/README.md` and
-  `REPO_OVERRIDES`, and it should be a deliberate decision rather
-  than a side effect of this plan.
-* Renovate configuration, and the `master` versus `develop`
-  default branch question, both follow from that decision.
+* #19: the `master` versus `develop` default branch, and secret
+  scanning with push protection. Both are repository settings and
+  decisions, not files. A rename is not free: the workflows trigger
+  on `master` by name, and until Phase 2's cutover the build host's
+  checkout pulls `master`.
+* Whether to widen `REPO_OVERRIDES['images']` beyond `eol-distro`,
+  which is shakenfist/development's decision 6.5 to revisit.
+* The `AGENTS.md` item this section used to carry ("manually or via
+  cron") moved to Phase 2's cutover step, which is what makes it
+  wrong.
 
 ### Phase 6. Push audit
 
@@ -663,9 +690,30 @@ into it.
   are a periodic commit, which is noise, or a second watcher outside
   this repository that notices the watchdog has stopped reporting,
   and the second is a design decision rather than a patch.
+
+  **Moved into Phase 2 on 2026-10-24.** Once the build's own
+  schedule lives in this repository, the same 60 days switches off
+  the build and its watchdog together, so this item stopped being
+  optional. Phase 2's D8 makes the decision: a Grafana alert in 33fl
+  on the absence of `{job="image-build-summary"}`.
 * **Publishing checksums and signatures.** Consumers currently
   fetch `latest.qcow2` over HTTPS with no way to verify what they
   got.
+* **Pin diskimage-builder.** `build.sh` clones and patches DIB from
+  upstream `master` every run, so the builder's most important
+  dependency is still an undeclared input. That is the same class of
+  defect as the unpinned build host. Phase 2 makes the build host a
+  declared value and leaves this alone, because it changes what is
+  built rather than where. A pinned commit that renovate bumps would
+  make every DIB change a reviewable pull request, and it would
+  reduce Phase 2's R1, which is upstream code running as root on a
+  runner that holds the CI mesh key.
+* **Build affected images on pull requests.** Once Phase 2 exists, a
+  pull request that touches `build.sh` or `elements/` could build the
+  affected image on a VM runner with `--no-push`. That would automate
+  the template's "at least one affected image actually built" check.
+  It needs the fork guard from `actions/docs/ci.md`, and it is a trust
+  decision Phase 2 deliberately does not take (Phase 2, D2).
 
 ### Bugs fixed during this work
 

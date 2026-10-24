@@ -275,7 +275,7 @@ per `docs/plans/index.md`.
 | Phase | Merged | Status |
 |-------|--------|--------|
 | 0. Planning foundation | 39303ef (#3) | Complete |
-| 1. One failure stops one image | | In progress |
+| 1. One failure stops one image | 47ed141 (#6), 3423343 (#12) | Complete |
 | 2. Move the build mechanism | | Not started |
 | 3. Failure files an issue | | Not started |
 | 4. Freshness watchdog | acccd2b (#5) | Complete |
@@ -315,8 +315,22 @@ brought into audit scope is Phase 5's business.
 
 ### Phase 1. One failure stops one image
 
-Status: In progress
+Status: Complete
 Effort: medium. Model: sonnet.
+Merged: 47ed141 (#6), and 3423343 (#12), which fixed #10 -- the
+run summary this phase added went only to stdout, which cron
+discarded, so #12 ships it to Loki as `{job="image-build-summary"}`.
+
+Closed out on 2026-10-24, in the first commit of Phase 2. The
+verification below was never run as a deliberate experiment, but
+the nightly build has since run it for real, which is better
+evidence. In October 2026 the summary stream recorded several
+consecutive runs with `Failed: centos:9-stream` (the `/tmp` tmpfs
+exhaustion that #18 fixed) beside
+`Built:` for all thirteen other images -- one failure stopping one
+image, on the build host, with the summary naming only the broken
+image. Query: `{job="image-build-summary"} |~ "^Failed:"` on the
+`sfyow` tenant.
 
 Make `build.sh` continue past a failed image and report at the end,
 instead of aborting the run. This is the outage class, and fixing it
@@ -556,6 +570,15 @@ quietly. #16 is resolved in one pull request:
 The one finding not fixed in code is that GitHub disables a
 scheduled workflow after 60 days without a commit; it is recorded
 under future work below, and in a comment on the schedule.
+
+**That run was an interim audit, not this phase.** #16's fixes
+landed in 8a179b6 (#22) on 2026-10-24. The phase stays
+`In progress` because the push audit block requires it to be the
+last thing the plan does, over the whole plan's work, and Phases 2,
+3 and 5 had not started when it ran. The final audit therefore still
+has to read everything that landed after #14 -- 46ddb37 (#18),
+a75db0b (#20), 8a179b6 (#22) and every Phase 2, 3 and 5 landing --
+and can cite the 2026-10-08 run for #5 to #14 rather than repeat it.
 
 Per the push audit shared block above. There is no `PUSH-AUDIT.md`
 in this repository, so this phase either creates one -- the better

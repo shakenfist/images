@@ -73,7 +73,10 @@ cat > "${WORK}/bin/rsync" << 'EOF'
 #
 # RSYNC_SHIM_FAIL_CALL=n makes the nth call fail without doing
 # anything, the way a dropped connection would. RSYNC_SHIM_EMPTY_LISTING
-# makes --list-only succeed and print nothing.
+# makes --list-only succeed and print nothing. RSYNC_SHIM_LIST_LINKS
+# adds -l to --list-only, which makes rsync show a symlink with its
+# target, as "latest.qcow2 -> image.qcow2". What a --list-only
+# printed is copied to the log as LISTED lines.
 count=$(( $(grep -c '^CALL' "${RSYNC_SHIM_LOG}" 2>/dev/null || true) + 1 ))
 {
     printf 'CALL'
@@ -90,6 +93,13 @@ case " $* " in
         if [ -n "${RSYNC_SHIM_EMPTY_LISTING:-}" ]; then
             exit 0
         fi
+        if [ -n "${RSYNC_SHIM_LIST_LINKS:-}" ]; then
+            set -- -l "$@"
+        fi
+        "${REAL_RSYNC}" "$@" > "${RSYNC_SHIM_LOG}.out" || rc=$?
+        cat "${RSYNC_SHIM_LOG}.out"
+        sed 's/^/LISTED /' "${RSYNC_SHIM_LOG}.out" >> "${RSYNC_SHIM_LOG}"
+        exit "${rc}"
         ;;
 esac
 "${REAL_RSYNC}" "$@" || rc=$?
@@ -104,7 +114,7 @@ OUTPUT_DIR="${WORK}/output/debian:13"
 SHIM_LOG="${WORK}/rsync.log"
 
 reset() {
-    rm -rf "${SITE}" "${WORK}/output" "${WORK}/tmp" "${SHIM_LOG}"
+    rm -rf "${SITE}" "${WORK}/output" "${WORK}/tmp" "${SHIM_LOG}" "${SHIM_LOG}.out"
     mkdir -p "${SITE}" "${OUTPUT_DIR}" "${WORK}/tmp"
 }
 
@@ -273,6 +283,25 @@ if [ -z "${problem}" ] && [ -n "$(ls -A "${WORK}/tmp")" ]; then
     problem="the staging directory was left behind"
 fi
 result "nine images keep the newest seven, their logs and latest.qcow2" "${problem}"
+
+# The same, with the listing showing latest.qcow2 as a symlink with
+# its target, as rsync does under -l or -a. The sweep still finds
+# latest.qcow2 and prunes as before.
+reset
+make_site "${NINE[@]}"
+rc=$(RSYNC_SHIM_LIST_LINKS=1 run prune_published "${OUTPUT_DIR}/${IMAGE}")
+problem=""
+want="README $(names "${NINE[@]:2}")latest.qcow2 "
+if ! grep -q '^LISTED l.* latest\.qcow2 -> ' "${SHIM_LOG}"; then
+    problem="the listing did not show latest.qcow2 with its target, so this tests nothing"
+elif [ "${rc}" != 0 ]; then
+    problem="exit ${rc}, wanted 0"
+elif [ "$(listing)" != "${want}" ]; then
+    problem="the site holds '$(listing)', wanted '${want}'"
+elif [ "$(readlink "${LABEL_DIR}/latest.qcow2")" != "${IMAGE}" ]; then
+    problem="latest.qcow2 is no longer a symlink to ${IMAGE}"
+fi
+result "a listing showing latest.qcow2's target still prunes to seven" "${problem}"
 
 # Three images: nothing to prune, and nothing pruned.
 reset

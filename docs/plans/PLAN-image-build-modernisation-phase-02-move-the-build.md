@@ -310,6 +310,22 @@ except from `master` (D2), and sfyow is no better a place to be
 compromised from. Pinning DIB is the real mitigation, and it is Future
 work. *Who checks:* the push audit phase, under checklist item 3.
 
+The publish key is exposed in the same way, and that is also
+accepted. On a publishing run, the key and `RSYNC_RSH` are written
+before the build step, so the root-run build can read them. `from=`
+and rrsync stop the key being used anywhere else, but not from the VM
+itself, where it can overwrite or delete the site. PR #23's review
+suggested publishing from a later step, through a publish-only mode in
+`build.sh`. That was declined because it narrows the window without
+closing it. A root scriptlet can leave a process behind on the VM that
+waits for the key to appear in the later step, and nothing between
+steps would stop it. What would close it is not running untrusted
+code as root on the machine that holds the key: building in a
+throwaway VM nested inside the job, or publishing from a second job on
+a fresh VM that only downloads the artifact. Both are larger changes
+than this phase, and either can be added later without reworking the
+publish code.
+
 **R2. A wrong keep list deletes published images.** *Mitigation:* the
 refusal in D5 and the 2a test cases that prove it. 2d step 3 then checks
 retention on the real site with one image before fourteen run.

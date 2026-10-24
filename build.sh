@@ -660,12 +660,9 @@ function build_one () {
     # night at a time. --no-push publishes nothing, so it keeps every
     # image the run builds for inspection instead of only the last.
     #
-    # This used to be what kept an earlier image off the site as well,
-    # when the rsync copied the whole tree. publish_image now names the
-    # files this call built, so a leftover is no longer published, but
-    # the removal is still checked: errexit is off in here, and an
-    # unchecked command in this function is how the rest of it went
-    # wrong.
+    # publish_image names the files this call built, so a leftover in
+    # the tree is never published. The removal is checked all the same:
+    # errexit is off in here, so a failure nobody checks goes unseen.
     if [ "${do_not_push}" = 0 ]; then
         if ! rm -rf /srv/sf-images/output || [ -e /srv/sf-images/output ]; then
             echo "BUILD FAILED: could not empty /srv/sf-images/output"
@@ -869,8 +866,8 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
 #
 # The symlink goes last so that it never points at a file still in
 # transit. rsync makes no promise about the order it sends files in.
-# On a local disk the window in which latest.qcow2 led nowhere was
-# milliseconds; over a WAN it is as long as the upload of the image. A
+# On a local disk the window in which latest.qcow2 would lead nowhere
+# is milliseconds; over a WAN it is as long as the upload of the image. A
 # failed first rsync returns before the second, so an image that did
 # not arrive is never made latest.
 #
@@ -882,10 +879,10 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
 # the files also means exactly what this call built is published,
 # whatever else is in the output directory.
 #
-# -c and --progress are gone. A dated name is new each day, and
-# rsync's own check of size and time resends a same-day rebuild, so a
-# checksum of every file at both ends bought nothing. A progress meter
-# per file floods a CI log.
+# No -c: a dated name is new each day, and rsync's own check of size
+# and time resends a same-day rebuild, so a checksum of every file at
+# both ends would buy nothing. No --progress: a meter per file floods
+# a CI log.
 function publish_image () {
     # $1: output filename, as build_one has it
     local output="$1"
@@ -912,8 +909,7 @@ function publish_image () {
 # --existing and --ignore-existing together mean nothing is ever sent,
 # so all that transfer can do is --delete what the staging directory
 # does not name. The filters narrow even that to images and their
-# logs: anything else somebody put beside them is left alone, as it was
-# when this was an ls and an rm.
+# logs: anything else somebody put beside them is left alone.
 #
 # The --delete is the danger. A listing that parsed as empty, or as
 # something other than what is really there, would turn "keep seven"
@@ -953,17 +949,30 @@ function prune_published_in () {
     published=$(basename "${output}")
     dest="${publish_target}${label}/"
 
+    # Each line of the listing is permissions, size, date, time and
+    # name. A symlink comes in one of two forms: plainly, as here, it
+    # is "lrwxrwxrwx 16 2026/10/25 06:43:41 latest.qcow2", but with -l
+    # or -a rsync appends its target, as "latest.qcow2 -> image.qcow2".
+    # The parser below accepts both for latest.qcow2, so adding either
+    # flag here does not quietly make every sweep refuse.
     if ! rsync --list-only "${dest}" > "${staging}/listing"; then
         echo "WARNING: could not list ${dest}, so nothing was pruned"
         return 1
     fi
 
-    # The listing is permissions, size, date, time and name. Regular
-    # files named *.qcow2 are images; latest.qcow2 is not one, and
-    # only has to be there. A line with more fields than that is a
-    # name with a space in it, which is not ours.
+    # Regular files named *.qcow2 are images; latest.qcow2 is not one,
+    # and only has to be there. A line with more fields than the five
+    # is a name with a space in it, which is not ours, unless it is
+    # latest.qcow2 shown with its target.
     while read -r perms _ _ _ name rest; do
         if [ -n "${rest}" ]; then
+            if [ "${name}" = latest.qcow2 ]; then
+                case "${perms}:${rest}" in
+                    l*:'-> '*)
+                        saw_latest=1
+                        ;;
+                esac
+            fi
             continue
         fi
         case "${name}" in

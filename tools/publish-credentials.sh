@@ -30,7 +30,8 @@
 # or a missing target would otherwise surface only at the publish, an
 # hour later. A target with no host in it is refused too: on a
 # throwaway VM a local path publishes into a disk that is deleted when
-# the job ends.
+# the job ends. So is a target starting with '-', which rsync would
+# read as one of its own options rather than as the destination.
 #
 # Nothing here prints a secret, and it must not run under "set -x".
 #
@@ -89,6 +90,10 @@ case "$1" in
         case "${target}" in
             *[[:space:]]*)
                 echo "SF_IMAGES_PUBLISH_TARGET contains whitespace." >&2
+                exit 2
+                ;;
+            -*)
+                echo "SF_IMAGES_PUBLISH_TARGET starts with '-', which rsync would read as an option." >&2
                 exit 2
                 ;;
             *:*)

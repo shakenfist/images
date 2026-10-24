@@ -107,6 +107,16 @@ check "a quote is refused" 2 - \
     "${MATRIX}" 'debian:13"'
 check "a non-ASCII letter is refused" 2 - \
     "${MATRIX}" 'débian:13'
+# build.sh reads its flags before its image list, so a name starting
+# with '-' would be taken as a flag rather than built.
+check "a name that is a build.sh flag is refused" 2 - \
+    "${MATRIX}" '--list-images'
+check "--no-push as a name is refused" 2 - \
+    "${MATRIX}" '--no-push'
+check "a name starting with a single '-' is refused" 2 - \
+    "${MATRIX}" '-x'
+check "a flag among real names is refused" 2 - \
+    "${MATRIX}" 'debian:13 --no-push'
 check "several arguments are refused" 2 - \
     "${MATRIX}" 'debian:13' 'rocky:9'
 

@@ -12,10 +12,14 @@
 # not checked against build.sh's default list, because a one-off
 # rebuild of a retired image is a legitimate request and its build
 # block is still in build.sh. Each name is checked for its characters,
-# though: only letters, digits, '.', ':' and '-', which is every label
-# build.sh has ever had. The names become job names and arguments to a
-# command run as root, so anything else is refused rather than passed
-# on.
+# though: only letters, digits, '.', ':' and '-', starting with a
+# letter or digit, which is every label build.sh has ever had. The
+# names become job names and arguments to a command run as root, so
+# anything else is refused rather than passed on. The first character
+# matters as much as the rest: build.sh reads its flags before its
+# image list, so a name such as --list-images or --no-push would be
+# taken as a flag, and the job would go green having built nothing,
+# or having built everything unpublished.
 #
 # A list that comes out empty is refused too. A matrix with nothing in
 # it builds nothing and reports success, which is the shape of the
@@ -59,10 +63,10 @@ if [ "${#images[@]}" -eq 0 ]; then
     exit 2
 fi
 
-valid='^[A-Za-z0-9.:-]+$'
+valid='^[A-Za-z0-9][A-Za-z0-9.:-]*$'
 for image in "${images[@]}"; do
     if ! [[ "${image}" =~ ${valid} ]]; then
-        echo "Refusing image name '${image}': only letters, digits, '.', ':' and '-' are allowed." >&2
+        echo "Refusing image name '${image}': only letters, digits, '.', ':' and '-' are allowed, starting with a letter or digit." >&2
         exit 2
     fi
 done

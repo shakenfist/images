@@ -34,29 +34,34 @@ BLOCK="${WORK}/block.sh"
 sed -n '/^if \[ "\${SF_IMAGES_SELF_UPDATED/,/^fi$/p' \
     "${HERE}/build.sh" > "${BLOCK}"
 
-if [ ! -s "${BLOCK}" ]; then
-    echo "Could not find the self-update block in build.sh. If it was"
-    echo "renamed or reindented, fix the sed above rather than deleting"
-    echo "this test."
+# The flag parsing, from the same file, so that --no-self-update is
+# tested as build.sh really parses it. It runs from the first variable
+# it sets to the "done" that closes its loop.
+FLAGS="${WORK}/flags.sh"
+sed -n '/^list_images_only=0$/,/^done$/p' "${HERE}/build.sh" > "${FLAGS}"
+
+if [ ! -s "${BLOCK}" ] || ! grep -q -- '--no-self-update)' "${FLAGS}"; then
+    echo "Could not find the self-update block or the flag parsing in"
+    echo "build.sh. If either was renamed or reindented, fix the sed"
+    echo "above rather than deleting this test."
     exit 2
 fi
 
-# A stand-in for build.sh: the real block, wrapped in enough of a
-# script to see which copy of it ran. Writing the marker after the
-# block is what distinguishes "restarted and ran the new code" from
-# "restarted and ran the old code again".
+# A stand-in for build.sh: the real flag parsing and the real block,
+# wrapped in enough of a script to see which copy of it ran. Writing
+# the marker after the block is what distinguishes "restarted and ran
+# the new code" from "restarted and ran the old code again".
 #
 # build.sh keeps its arguments in original_args and then consumes its
-# flags before the block runs, so the stand-in does the same: "shift
-# $#" is the flag parsing, and the ARGS line shows what the copy that
-# finally ran was given.
+# flags before the block runs, so the stand-in does the same, and the
+# ARGS line shows what the copy that finally ran was given.
 make_script() {
     # $1 destination, $2 marker text
     {
         echo '#!/bin/bash -e'
         # shellcheck disable=SC2016
         echo 'original_args=("$@")'
-        echo 'shift $#'
+        cat "${FLAGS}"
         cat "${BLOCK}"
         echo "echo \"MARKER $2\""
         # shellcheck disable=SC2016
@@ -227,6 +232,23 @@ check 'unusable .git still builds' v1 1 'WARNING'
 setup
 run_in_checkout_with_broken_git
 check 'git refusing the repository still builds' v1 1 'WARNING'
+
+# --no-self-update leaves the checkout exactly where it is, even when
+# it is behind, and says so. In a CI checkout of a branch, a pull here
+# would replace the code under test with master's.
+setup
+advance_origin
+before_head=$(git -C "${WORK}/checkout" rev-parse HEAD)
+run_in_checkout --no-self-update
+check '--no-self-update runs the checkout as it is' v1 1 'Not updating this checkout'
+check '--no-self-update does not restart' v2 0 -
+if [ "$(git -C "${WORK}/checkout" rev-parse HEAD)" = "${before_head}" ]; then
+    printf '  ok    %-44s\n' '--no-self-update does not pull'
+    passed=$(( passed + 1 ))
+else
+    printf '  FAIL  %-44s the checkout moved\n' '--no-self-update does not pull'
+    failed=$(( failed + 1 ))
+fi
 
 # The guard variable stops a second pass pulling again.
 setup

@@ -93,6 +93,15 @@ original_args=("$@")
 # images.shakenfist.com or prune old ones there. Without it, every run
 # publishes, including one somebody started by hand to try something.
 #
+# --no-self-update skips the fast-forward of this checkout below. That
+# update exists for a long-lived clone run by cron, and in a fresh CI
+# checkout it is wrong in both directions: a run started from a branch
+# would pull master over the branch it was asked to test, and a
+# scheduled run already has exactly the commit it should build. It is
+# a flag rather than a guess from the environment, such as noticing
+# GITHUB_ACTIONS, for the same reason the rest of this parser refuses
+# to guess: the run should do what it was told, and say so.
+#
 # Anything else that looks like a flag, and anything after the image
 # list, is refused rather than guessed at. A mistyped --no-push would
 # otherwise become the image list, and a --no-push written after the
@@ -100,6 +109,7 @@ original_args=("$@")
 # one thing the operator asked it not to do. The list is a single
 # argument, so several images have to be quoted together.
 list_images_only=0
+self_update=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --list-images)
@@ -110,9 +120,13 @@ while [ $# -gt 0 ]; do
             do_not_push=1
             shift
             ;;
+        --no-self-update)
+            self_update=0
+            shift
+            ;;
         -*)
             echo "Unknown flag: $1"
-            echo "Usage: $0 [--list-images] [--no-push] [\"image image ...\"]"
+            echo "Usage: $0 [--list-images] [--no-push] [--no-self-update] [\"image image ...\"]"
             exit 2
             ;;
         *)
@@ -154,7 +168,8 @@ echo
 #
 # Placed after the --list-images exit above so the watchdog, which
 # runs this script on a GitHub runner in a fresh checkout, never
-# triggers a pull.
+# triggers a pull. A build in a fresh checkout passes --no-self-update
+# for the same reason, and the run says it was skipped.
 #
 # The re-exec is not optional. bash reads a script lazily, by byte
 # offset, so replacing build.sh underneath a running build.sh makes it
@@ -190,7 +205,7 @@ echo
 # repository. Any git failure at all has to land in the else branch:
 # an unpacked copy with no .git, a checkout git will not open, a
 # missing origin, a diverged branch, no network.
-if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ -d .git ]; then
+if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ "${self_update}" = 1 ] && [ -d .git ]; then
     if before=$(git rev-parse HEAD) && git pull --ff-only origin master; then
         after=$(git rev-parse HEAD)
         if [ "${before}" != "${after}" ]; then
@@ -213,7 +228,44 @@ if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ -d .git ]; then
         echo "===================================================================="
         echo
     fi
+elif [ "${self_update}" = 0 ]; then
+    echo "Not updating this checkout: --no-self-update was given."
+    echo
 fi
+
+# Where a publishing run sends what it built: an rsync destination,
+# either a local directory or [user@]host:path, holding a directory
+# per image label. Like the Loki settings below it is read from the
+# environment, because where the site lives is a property of the
+# deployment, and this repository is public.
+#
+# Nothing here knows about SSH. rsync reads RSYNC_RSH from the
+# environment by itself, so the key and the pinned host key belong to
+# whoever starts the run, and tools/test-publish.sh can drive the same
+# code against a temporary directory. Under sudo both variables have
+# to be passed through with --preserve-env. A lost RSYNC_RSH fails
+# loudly, because ssh has no key to offer; a lost target does not, it
+# falls back to the default below.
+#
+# That default is the document root on the build host, where cron has
+# always published. It exists only until the nightly build moves off
+# that host. After that an unset target will be refused before
+# anything is built, because a publishing run that has lost its target
+# should stop, not write the images into a local directory on
+# whichever machine it happens to be running on.
+#
+# A missing trailing slash is added, because the label is appended to
+# this as a path component: without it /srv/www/site and debian:13
+# would make /srv/www/sitedebian:13. A bare host: is left alone, since
+# that already ends a path.
+publish_target="${SF_IMAGES_PUBLISH_TARGET:-/srv/www/images.shakenfist.com/}"
+case "${publish_target}" in
+    */ | *:)
+        ;;
+    *)
+        publish_target="${publish_target}/"
+        ;;
+esac
 
 # Where build logs are shipped, read from the environment so the
 # destination is a property of the deployment rather than of the
@@ -602,21 +654,23 @@ function build_one () {
     echo "===================================================================="
     echo
 
-    # Each publishing build starts from an empty output tree, because
-    # the rsync below copies the whole of it: an image left there from
-    # an earlier build would be published again. --no-push publishes
-    # nothing, so it keeps every image the run builds for inspection
-    # instead of only the last.
+    # Each publishing build starts from an empty output tree. File
+    # names carry the date, so on a long-lived build host nothing else
+    # would ever remove an image from it, and the disk would fill a
+    # night at a time. --no-push publishes nothing, so it keeps every
+    # image the run builds for inspection instead of only the last.
     #
-    # That makes the removal load bearing, so it is checked: errexit is
-    # off in here, and a removal that failed quietly would publish
-    # whatever an earlier --no-push run left behind -- the images the
-    # operator asked not to publish.
+    # This used to be what kept an earlier image off the site as well,
+    # when the rsync copied the whole tree. publish_image now names the
+    # files this call built, so a leftover is no longer published, but
+    # the removal is still checked: errexit is off in here, and an
+    # unchecked command in this function is how the rest of it went
+    # wrong.
     if [ "${do_not_push}" = 0 ]; then
         if ! rm -rf /srv/sf-images/output || [ -e /srv/sf-images/output ]; then
             echo "BUILD FAILED: could not empty /srv/sf-images/output"
             push_log_to_loki "${output}.log" "${label}" "failure" \
-                "Could not empty /srv/sf-images/output, so publishing would have copied whatever it still held."
+                "Could not empty /srv/sf-images/output before building ${label}."
             return 1
         fi
     fi
@@ -780,35 +834,21 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
         return 1
     fi
 
-    # Copy images to the repository
+    # Publish the image, then prune old ones. Both are below, after
+    # this function, and both run with errexit off for the same reason
+    # this function does.
     if [ $do_not_push == 0 ]; then
-        if ! ( cd /srv/sf-images/output \
-                && rsync -rcavp --links --progress . /srv/www/images.shakenfist.com/ ); then
-            echo "BUILD FAILED: could not publish to images.shakenfist.com"
+        if ! publish_image "${output}"; then
             push_log_to_loki "${output}.log" "${label}" "failure"
             return 1
         fi
 
-        # Cleanup old images. Not fatal: the image is published by
-        # this point, and failing the build because the retention
-        # sweep stumbled would report the wrong problem.
-        (
-            cd "/srv/www/images.shakenfist.com/${label}" || exit 0
-            numimages=$( ls *.qcow2 | grep -v latest | sort | wc -l )
-            numextra=$(( numimages - 7 ))
-
-            # With fewer than seven images this is negative, and
-            # "head --4" is an error that a command substitution
-            # silently discards. Nothing was lost, but an error path
-            # that cannot report is how the rest of this file went
-            # wrong.
-            if [ ${numextra} -gt 0 ]; then
-                for img in $( ls *.qcow2 | grep -v latest | sort | head -${numextra} ); do
-                    echo "Removing $img"
-                    rm -f $img $img.log
-                done
-            fi
-        ) || echo "WARNING: retention sweep for ${label} did not complete"
+        # Not fatal: the image is published by this point, and failing
+        # the build because the retention sweep stumbled would report
+        # the wrong problem.
+        if ! prune_published "${output}"; then
+            echo "WARNING: retention sweep for ${label} did not complete"
+        fi
     else
         echo "Skipping push"
     fi
@@ -816,6 +856,192 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
     push_log_to_loki "${output}.log" "${label}" "success"
     return 0
 }
+
+# Publishing and retention. Each of these works through rsync alone,
+# so the same code writes to a local directory or to another host, and
+# tools/test-publish.sh extracts these functions by name and drives
+# them against a temporary directory. They are called from build_one,
+# so errexit is off inside them as well, and every command whose
+# failure matters is checked by hand.
+
+# Send one image, with its log, to the publish target, then its
+# latest.qcow2 symlink in a second rsync of its own.
+#
+# The symlink goes last so that it never points at a file still in
+# transit. rsync makes no promise about the order it sends files in.
+# On a local disk the window in which latest.qcow2 led nowhere was
+# milliseconds; over a WAN it is as long as the upload of the image. A
+# failed first rsync returns before the second, so an image that did
+# not arrive is never made latest.
+#
+# The files are named rather than the directory being sent with a
+# trailing slash. Sending the directory makes rsync set the
+# permissions and times of the label's directory at the far end, and
+# an account that can write into a directory it does not own is not
+# allowed to do that: rsync exits 23 having copied everything. Naming
+# the files also means exactly what this call built is published,
+# whatever else is in the output directory.
+#
+# -c and --progress are gone. A dated name is new each day, and
+# rsync's own check of size and time resends a same-day rebuild, so a
+# checksum of every file at both ends bought nothing. A progress meter
+# per file floods a CI log.
+function publish_image () {
+    # $1: output filename, as build_one has it
+    local output="$1"
+    local outdir label
+    outdir=$(dirname "${output}")
+    label=$(basename "${outdir}")
+
+    if ! rsync -av "${output}" "${output}.log" "${publish_target}${label}/"; then
+        echo "BUILD FAILED: could not publish ${label} to ${publish_target}"
+        return 1
+    fi
+    if ! rsync -av "${outdir}/latest.qcow2" "${publish_target}${label}/"; then
+        echo "BUILD FAILED: published ${label}, but could not update its latest.qcow2"
+        return 1
+    fi
+    return 0
+}
+
+# Remove all but the newest seven images of one label from the publish
+# target, with their logs. latest.qcow2 is always kept.
+#
+# rsync cannot run rm at the far end, so the deletion is an rsync from
+# a staging directory holding an empty file named for each keeper.
+# --existing and --ignore-existing together mean nothing is ever sent,
+# so all that transfer can do is --delete what the staging directory
+# does not name. The filters narrow even that to images and their
+# logs: anything else somebody put beside them is left alone, as it was
+# when this was an ls and an rm.
+#
+# The --delete is the danger. A listing that parsed as empty, or as
+# something other than what is really there, would turn "keep seven"
+# into "keep nothing", and a deleted image cannot be rebuilt as it
+# was. So nothing is deleted unless the keep set holds both the image
+# this run has just published and latest.qcow2. Both were sent moments
+# ago, so a listing that does not show them is not a listing of what
+# is there. Keepers are chosen by sorting names, which carry the build
+# date, so the same check also refuses when names sorting after
+# today's would push it out of the seven.
+#
+# Returns non-zero, having warned, on any failure and on that refusal.
+function prune_published () {
+    # $1: output filename, as build_one has it
+    local staging status
+    if ! staging=$(mktemp -d); then
+        echo "WARNING: could not make a staging directory for the retention sweep"
+        return 1
+    fi
+    prune_published_in "${staging}" "$1"
+    status=$?
+    rm -rf "${staging}"
+    return "${status}"
+}
+
+function prune_published_in () {
+    # $1: an empty scratch directory, removed by the caller
+    # $2: output filename, as build_one has it
+    local staging="$1"
+    local output="$2"
+    local outdir label published dest
+    local perms name rest start keeper
+    local saw_latest=0 keeps_published=0
+    local listed=() sorted=() keepers=()
+    outdir=$(dirname "${output}")
+    label=$(basename "${outdir}")
+    published=$(basename "${output}")
+    dest="${publish_target}${label}/"
+
+    if ! rsync --list-only "${dest}" > "${staging}/listing"; then
+        echo "WARNING: could not list ${dest}, so nothing was pruned"
+        return 1
+    fi
+
+    # The listing is permissions, size, date, time and name. Regular
+    # files named *.qcow2 are images; latest.qcow2 is not one, and
+    # only has to be there. A line with more fields than that is a
+    # name with a space in it, which is not ours.
+    while read -r perms _ _ _ name rest; do
+        if [ -n "${rest}" ]; then
+            continue
+        fi
+        case "${name}" in
+            latest.qcow2)
+                case "${perms}" in
+                    -* | l*)
+                        saw_latest=1
+                        ;;
+                esac
+                ;;
+            *.qcow2)
+                case "${perms}" in
+                    -*)
+                        listed+=("${name}")
+                        ;;
+                esac
+                ;;
+        esac
+    done < "${staging}/listing"
+
+    if [ "${#listed[@]}" -gt 0 ]; then
+        if ! printf '%s\n' "${listed[@]}" > "${staging}/listed" \
+                || ! LC_ALL=C sort "${staging}/listed" > "${staging}/sorted" \
+                || ! mapfile -t sorted < "${staging}/sorted"; then
+            echo "WARNING: could not sort the images listed in ${dest}, so nothing was pruned"
+            return 1
+        fi
+    fi
+
+    # A negative offset past the start of an array expands to nothing
+    # rather than to the whole array, so the start is clamped here.
+    start=$(( ${#sorted[@]} > 7 ? ${#sorted[@]} - 7 : 0 ))
+    keepers=("${sorted[@]:start}")
+
+    for keeper in "${keepers[@]}"; do
+        if [ "${keeper}" = "${published}" ]; then
+            keeps_published=1
+        fi
+    done
+    if [ "${keeps_published}" != 1 ] || [ "${saw_latest}" != 1 ]; then
+        echo "WARNING: not pruning ${label}. The listing of ${dest} should show"
+        echo "${published} among the newest seven images and a latest.qcow2,"
+        echo "because both were sent moments ago, and it does not. It cannot be"
+        echo "trusted to say what to keep, so nothing was deleted."
+        echo "Images listed: ${#sorted[@]}; latest.qcow2 listed: ${saw_latest}"
+        return 1
+    fi
+
+    if [ "${start}" -eq 0 ]; then
+        echo "Nothing to prune for ${label}: ${#sorted[@]} images, and seven are kept"
+        return 0
+    fi
+
+    if ! mkdir "${staging}/keep"; then
+        echo "WARNING: could not make the keep list for ${label}, so nothing was pruned"
+        return 1
+    fi
+    for keeper in "${keepers[@]}"; do
+        if ! touch "${staging}/keep/${keeper}" "${staging}/keep/${keeper}.log"; then
+            echo "WARNING: could not make the keep list for ${label}, so nothing was pruned"
+            return 1
+        fi
+    done
+    if ! touch "${staging}/keep/latest.qcow2"; then
+        echo "WARNING: could not make the keep list for ${label}, so nothing was pruned"
+        return 1
+    fi
+
+    echo "Pruning ${label}: removing the oldest ${start} of ${#sorted[@]} images"
+    if ! rsync -rv --delete --existing --ignore-existing \
+            --include='*.qcow2' --include='*.qcow2.log' --exclude='*' \
+            "${staging}/keep/" "${dest}"; then
+        echo "WARNING: removing old images of ${label} from ${dest} failed part way"
+        return 1
+    fi
+    return 0
+}
+
 # Too old for the agent to run, but convenient to have for testing
 if [ $(echo $images | grep -c "ubuntu:16.04") -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:16.04/ubuntu-16.04-${datestamp}.qcow2"

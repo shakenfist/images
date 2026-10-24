@@ -81,9 +81,19 @@ sudo --preserve-env=SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT \
 * `sudo` resets the environment, so without `--preserve-env` the
   Loki variables you exported do not reach `build.sh`. The run warns
   if `SF_IMAGES_LOKI_URL` is missing.
-* Without `--no-push`, a run publishes what it builds to
-  images.shakenfist.com and prunes old images there, exactly as the
-  nightly build does. `--no-push` leaves every image the run builds
+* Without `--no-push`, a run publishes what it builds and prunes old
+  images, keeping the newest seven of each, exactly as the nightly
+  build does. Where it publishes is `SF_IMAGES_PUBLISH_TARGET`, an
+  rsync destination: a local directory or `user@host:path`. Unset, it
+  is this host's document root, `/srv/www/images.shakenfist.com/`;
+  that default goes once the nightly build has moved off this host.
+  `build.sh` knows nothing about SSH. rsync takes `RSYNC_RSH` from the
+  environment, so a remote target's key and host key go there. Under
+  `sudo`, add both to `--preserve-env`: a lost `RSYNC_RSH` fails, but
+  a lost target quietly publishes to the local default instead.
+  Retention refuses to delete anything, and says so, if the target's
+  listing does not show the image just published and `latest.qcow2`.
+  `--no-push` leaves every image the run builds
   under `/srv/sf-images/output/<label>/` and says so in the summary.
   They stay there until the next publishing run, which empties the
   directory before each image, so a `--no-push` of the whole list
@@ -95,7 +105,9 @@ sudo --preserve-env=SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT \
   guessed at, because the guess that goes wrong is a run that
   publishes.
 * The checkout still updates itself first, as below, and the restart
-  keeps every argument you gave.
+  keeps every argument you gave. `--no-self-update` skips that and
+  builds the checkout exactly as it is, which is what a CI checkout of
+  a branch needs: the update would pull `master` over it.
 
 ## The checkout updates itself, but only since 2026-09-14
 

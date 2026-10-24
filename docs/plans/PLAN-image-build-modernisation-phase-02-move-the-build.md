@@ -371,6 +371,51 @@ Each item can be checked by running something:
 - [ ] After 2f, `grep -n 'self-update\|SF_IMAGES_SELF_UPDATED' build.sh`
   prints nothing.
 
+## Execution notes
+
+**2026-10-25 (AEDT), back brief.** The operator agreed the plan, and
+answered the two questions it raised:
+
+* PR A (2a and 2b) meets the template's "an image was actually built"
+  check by the operator running
+  `sudo --preserve-env=SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update debian:13`
+  from the branch on sfyow **before PR A merges**. That is a real
+  build and a real publish through the new two-rsync path and the new
+  retention, to the local target the cron still uses.
+* This session may push the branch and open PR A. Merging stays with
+  the operator.
+
+**2a ran in the phase worktree, not in a worktree of its own.** The
+phase worktree is already isolated from `master`, and a second
+worktree would only have added a copy step.
+
+**2a departed from its brief in two ways. Both were kept after
+review:**
+
+* The first rsync names the image and its log, rather than sending
+  `${outdir}/` minus `latest.qcow2`. When an account that does not own
+  the label directory sends a directory, rsync tries to set that
+  directory's permissions and exits 23 after copying everything. The
+  agent reproduced this in a debian:13 container. The plan's own
+  wording was already "the dated image and its log go in one rsync".
+* The delete rsync is narrowed by `--include='*.qcow2'
+  --include='*.qcow2.log' --exclude='*'`, so retention can only remove
+  the kinds of file the old `ls`/`rm` removed. A check on 2026-10-25
+  of every label in `--list-images` on images.shakenfist.com found
+  only `<name>-YYYYMMDD.qcow2`, its `.log`, and `latest.qcow2`.
+
+**The shellcheck baseline was 125, not 126.** After 2a it is 119, and
+the diff only removes findings.
+
+**Prerequisites 2a sets for 2c:**
+
+* The publish account needs group write on every existing label
+  directory as well as the document root, and no sticky bit, or it
+  cannot replace or delete root-owned files.
+* rrsync must run without `-ro`, `-wo`, `-no-del` and `-munge`.
+  Retention lists and deletes, and `latest.qcow2` has to arrive as a
+  real symlink.
+
 ## Results
 
 To be filled in by step 2d and the cutover.

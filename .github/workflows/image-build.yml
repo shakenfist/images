@@ -84,11 +84,16 @@ jobs:
     # here, reviewed like any other. m has 200 GB of disk, plenty for
     # one image.
     runs-on: [self-hosted, vm, debian-13, m]
-    # A first guess for a cold-cache build of the desktop images, to be
-    # replaced by about twice the slowest image once real runs have
-    # been measured. It bounds a hung build, which would otherwise hold
-    # a VM the rest of the fleet's CI needs for six hours.
-    timeout-minutes: 120
+    # The job includes the upload on a publishing run, so this is the
+    # slowest build plus the slowest upload, with margin. Every build
+    # here is cold-cache on a fresh VM, and on 2026-10-26 the slowest,
+    # debian-gnome:13, took 14.7 minutes on disk. One upload to sfyow ran
+    # at about 4.3 MB/s; if four parallel uploads share that, rocky:8's
+    # 1.9 GB takes about 30 minutes. 60 minutes covers both, and still
+    # stops a hung build from holding a VM the rest of the fleet's CI
+    # needs for six hours. Raise it with a new measurement if an image
+    # grows past it.
+    timeout-minutes: 60
     # The publishing credential and the Loki settings are secrets in the
     # images-publish environment, which only master may deploy from.
     # On master the job always takes it, publishing or not, so that a

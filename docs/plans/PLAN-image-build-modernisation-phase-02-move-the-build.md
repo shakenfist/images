@@ -234,7 +234,8 @@ runs with `fail-fast: false`, `max-parallel: 4` and `timeout-minutes:
 120`. A parallelism of four keeps a nightly build from taking fourteen
 `m` VMs (56 vCPU) away from the fleet's CI at once. The timeout is a
 first guess for a cold-cache build of the desktop images, and step 2d
-replaces it with a measured number. A `workflow_dispatch` input `images`
+replaces it with a measured number. (2d set it to 60 minutes: the
+slowest build plus the slowest upload, with margin. See *Results*.) A `workflow_dispatch` input `images`
 (empty means the whole list) and a boolean `publish` (default `false`) let
 one image be rebuilt by hand. A scheduled run always publishes.
 
@@ -606,8 +607,14 @@ images built, and all 14 summaries reached Loki. Time per job:
 
 * Building on disk hit the desktop images hardest compared with the
   tmpfs run: debian-gnome:13 went from 4.4 to 14.7 minutes, and the xfce
-  images took about 1.6 times as long. ubuntu:24.04 and rocky:8 barely
-  changed. `timeout-minutes` is now 30, about twice the slowest image.
+  images took about 1.6 times as long. rocky:8 did not change, and
+  ubuntu:24.04 took about a fifth longer.
+* `timeout-minutes` is now 60. It bounds the whole job, and on a
+  publishing run that includes the upload, which this run did not do.
+  The slowest build was 14.7 minutes. The slowest upload, rocky:8's
+  1.9 GB, takes about 30 minutes if the four parallel uploads share
+  the 4.3 MB/s that one upload measured. The first publishing run of
+  the whole list will show whether they do.
   Every runner build is a cold-cache build, so there is no warm case
   to allow for.
 * Peak disk use was not measured: nothing in the logs shows it, and no

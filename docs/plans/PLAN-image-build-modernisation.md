@@ -278,7 +278,7 @@ for this repository allows.
 |-------|--------|--------|
 | 0. Planning foundation | 39303ef (#3) | Complete |
 | 1. One failure stops one image | 47ed141 (#6), 3423343 (#12) | Complete |
-| 2. Move the build mechanism ([phase file](PLAN-image-build-modernisation-phase-02-move-the-build.md)) | | In progress |
+| 2. Move the build mechanism ([phase file](PLAN-image-build-modernisation-phase-02-move-the-build.md)) | da7683b (#23) | In progress |
 | 3. Failure files an issue | | Not started |
 | 4. Freshness watchdog | acccd2b (#5) | Complete |
 | 5. Repository standards | a75db0b (#20) | In progress |

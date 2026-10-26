@@ -46,7 +46,10 @@ checked and thrown away, and nothing is published.
 
 A second dispatch on the same ref waits for the first rather than
 cancelling it, so a hand run started during the nightly queues behind
-it.
+it. Only one run can wait, though: a third dispatch on the same ref
+while one runs and one waits replaces the waiting one, which is
+cancelled. To rebuild several images, name them all in one dispatch
+rather than dispatching each separately.
 
 ## Trying a change to build.sh
 

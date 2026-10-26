@@ -79,13 +79,11 @@ jobs:
   build:
     name: Build ${{ matrix.image }}
     needs: list
-    # This line is the declared builder OS. It is the same Debian
-    # release the build host runs, deliberately, so that moving the
-    # build changes where the images are made and not what they are
-    # made with: any difference afterwards is down to the environment,
-    # not a new release. Moving to a newer builder is a one-line change
-    # here, reviewed like any other. m has 200 GB of disk, plenty for
-    # one image.
+    # This line is the declared builder OS: every image is made with
+    # this Debian release's tools, so changing it changes what the
+    # images are built with. That makes moving to a newer builder a
+    # one-line change here, reviewed like any other. m has 200 GB of
+    # disk, plenty for one image.
     runs-on: [self-hosted, vm, debian-13, m]
     # The job includes the upload on a publishing run, so this is the
     # slowest build plus the slowest upload, with margin. Every build

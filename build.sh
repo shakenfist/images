@@ -97,7 +97,7 @@ original_args=("$@")
 # update exists for a long-lived clone run by cron, and in a fresh CI
 # checkout it is wrong in both directions: a run started from a branch
 # would pull master over the branch it was asked to test, and a
-# scheduled run already has exactly the commit it should build. It is
+# dispatched run already has exactly the commit it should build. It is
 # a flag rather than a guess from the environment, such as noticing
 # GITHUB_ACTIONS, for the same reason the rest of this parser refuses
 # to guess: the run should do what it was told, and say so.

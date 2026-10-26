@@ -24,6 +24,11 @@ set -o nounset
 set -o pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Every case runs without a publish target unless it sets one, so an
+# exported target in the caller's environment cannot make a case pass
+# that should have proved the refusal.
+unset SF_IMAGES_PUBLISH_TARGET
 BUILD="${HERE}/build.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -132,6 +137,32 @@ check_target "a --no-push run keeps a target it was given" 1 'user@host:path' 0 
 # one that can be run whole here.
 check "--list-images needs no target" 0 "debian:13" \
     --list-images debian:13
+
+# The refusal has to come before anything that changes the machine.
+# The whole script runs here, publishing with no target, from a copy
+# outside any git checkout. Refused in the right place, it exits 2
+# with the message before saying what it will build. Moved below the
+# preamble, it would try to install packages instead, so this runs
+# only as a user who cannot, and under a timeout.
+if [ "$(id -u)" -eq 0 ]; then
+    echo "SKIP: the whole-script refusal case does not run as root"
+else
+    mkdir "${WORK}/whole"
+    cp "${BUILD}" "${WORK}/whole/build.sh"
+    got=0
+    (cd "${WORK}/whole" && timeout 60 ./build.sh --no-self-update debian:13) \
+        > "${WORK}/whole.out" 2>&1 || got=$?
+    if [ "${got}" -eq 2 ] \
+            && grep -qF 'SF_IMAGES_PUBLISH_TARGET is not set' "${WORK}/whole.out" \
+            && ! grep -qF 'I will build' "${WORK}/whole.out"; then
+        echo "PASS: the whole script refuses before it starts building"
+        passed=$((passed + 1))
+    else
+        echo "FAIL: the whole script refuses before it starts building (exit ${got})"
+        sed 's/^/    /' "${WORK}/whole.out" | head -20
+        failed=$((failed + 1))
+    fi
+fi
 
 if "${BUILD}" --list-images | grep -q 'debian:13'; then
     echo "PASS: the default list is printed"

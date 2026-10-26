@@ -294,8 +294,8 @@ Each lettered step is one commit, unless its brief says otherwise.
 | 2a | high | opus | worktree | **Make `build.sh` able to publish from another host.** In `build.sh` only, plus a new `tools/test-publish.sh`. (1) Add `--no-self-update` to the flag loop at `build.sh:103-122`, which skips the self-update block at `:193-216`. Follow the existing flag style and the usage line at `:115`, extend `tools/test-build-arguments.sh` for the new flag, and keep the self-update's re-exec passing `original_args` unchanged. (2) Replace the publish block at `:783-814` as follows. Read `SF_IMAGES_PUBLISH_TARGET`, defaulting for now to `/srv/www/images.shakenfist.com/`, with a comment saying the default is removed at cutover and why. Publish **only** `${outdir}`, not `/srv/sf-images/output`. Use two rsyncs: first everything in `${outdir}` except `latest.qcow2` into `${target}${label}/`, then `latest.qcow2` alone. Drop `-c` (only new files are ever sent) and `--progress` (it floods the Actions log). Do not reference SSH anywhere; rsync takes `RSYNC_RSH` from the environment. (3) Rewrite the retention block at `:795-811` to work against the target by rsync alone: `rsync --list-only "${target}${label}/"`, parse the `*.qcow2` names other than `latest.qcow2`, keep the newest seven by name sort (as now) plus each keeper's `.log` and `latest.qcow2`, then delete the rest with `rsync -r --delete --existing --ignore-existing <staging>/ "${target}${label}/"`, where the staging directory holds an empty file per keeper and a placeholder for `latest.qcow2`. **Refuse to delete**, warn, and skip, unless the keep set contains the file this run just published and `latest.qcow2`. Retention stays non-fatal, as now (`:792-794`). (4) `build_one()` runs with errexit off (read its header at `:584-591`), so every new fallible command is checked by hand and returns 1 with a `push_log_to_loki` failure record, as the surrounding code does. Do not use `pipefail`. (5) `tools/test-publish.sh`: extract the publish and retention code from `build.sh` at run time, the way `tools/test-run-summary.sh` extracts its block, so the shipped text is what gets tested, and drive it against a temporary directory as the target. Cases: one publish lands image, log and symlink; the symlink is sent in a separate, later rsync (wrap `rsync` in a shim that logs its argument lists); retention with 9 images keeps 7, their logs and `latest.qcow2`; retention with 3 images deletes nothing; a listing that yields nothing deletes nothing and warns; a keep set missing the just-published image deletes nothing. Confirm each case fails with its fix reverted, and say so. (6) `bash -n`, `tools/run-tests.sh`, `pre-commit run --all-files`, and a shellcheck count on `build.sh` no higher than 126 (`docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable build.sh`). You cannot build an image. Say what a real run should do differently, and do not claim it works. |
 | 2b | high | opus | none | **Add `.github/workflows/image-build.yml`, dispatch-only.** Triggers: `workflow_dispatch` only, with inputs `images` (string, default empty, meaning `build.sh --list-images`) and `push` (boolean, default false). **No** `schedule` yet; 2e adds it. **No** `pull_request` or `push` trigger, ever (D2). Top-level `permissions: contents: read`. Job 1, `list`, on `[self-hosted, static]`, `timeout-minutes: 10`: run `tools/image-matrix.sh` (new, small, under `tools/` per the five-line rule), which prints `build.sh --list-images`, or the `images` input, as a JSON array to `GITHUB_OUTPUT`. Job 2, `build`, `needs: list`, `runs-on: [self-hosted, vm, debian-13, m]` with a comment saying this line **is** the declared builder OS and why it matches sfyow (D1), `strategy: {fail-fast: false, max-parallel: 4, matrix: {image: fromJSON(...)}}`, `timeout-minutes: 120` marked as a first guess, and `environment: images-publish` only when publishing. Use a separate job or an expression so a `push: false` dispatch from any branch needs no environment, and add `if: github.ref == 'refs/heads/master'` to the publishing path (D2). Checkout with `persist-credentials: false`. A step writes the SSH key and the pinned `known_hosts` line from secrets into `${RUNNER_TEMP}` with mode 600 and exports `RSYNC_RSH="ssh -i <key> -o IdentitiesOnly=yes -o UserKnownHostsFile=<kh> -o StrictHostKeyChecking=yes"`. Put that in `tools/`, not inline, if it exceeds five lines. The build step runs exactly as D11 states, passing `--no-push` when not publishing. A final `if: always()` step shreds the key. English-sentence `name:` on every job and step. Concurrency: `group: image-build-${{ github.ref }}`, `cancel-in-progress: false`. Read `.github/workflows/image-freshness.yml` and `ci.yml` for house style, and `development/.github/workflows/consistency-audit.yml:225-262` for the environment precedent. Confirm `actionlint` passes through pre-commit. |
 | 2c | high | opus | worktree | **33fl: a publish-only account on sfyow.** In the 33fl repository (`/srv/kasm_profiles/mikal/vscode/src/mach33labs/33fl`), extend `sfyow-images.yml`, or add a playbook beside it if that reads better, and document in `docs/sfyow-images.md`. Create an unprivileged user (suggested name `sf-images-publish`) that can write to `/srv/www/images.shakenfist.com`. Look at `sfyow-web.yml` and `docs/sfyow-web.md` for who owns the docroot now, and prefer a shared group over changing ownership, so apache and today's root-run cron keep working. Install `rrsync` (Debian ships it in the `rsync` package, as `/usr/bin/rrsync` on trixie; verify that). Give the user an `authorized_keys` entry `restrict,from="<sf-1 egress>",command="/usr/bin/rrsync /srv/www/images.shakenfist.com" <pubkey>`. The public key and the sf-1 address are variables in 33fl's normal secret and inventory handling. Find how `conductor.yml` handles `sfcbr_ci_images_key` and do the same. **Do not** remove the cron job in this step; that is 2e. The operator generates the key pair. The management session then creates the `images-publish` environment and its secrets (`IMAGES_PUBLISH_SSH_KEY`, `IMAGES_PUBLISH_KNOWN_HOSTS`, `IMAGES_PUBLISH_TARGET`, `SF_IMAGES_LOKI_URL`, `SF_IMAGES_LOKI_TENANT`) with `gh`, after asking, because they are outward-facing settings. Deployment branch policy: `master` only, no reviewers. **Set or check the policy before adding any secret.** GitHub creates an environment named by a workflow the first time a job uses it, with no branch policy. So a `master` dispatch made after PR A merges may already have created `images-publish`, unprotected. |
-| 2d | -- | -- | management session | **Prove it before switching anything.** (0) Dispatch `image-build.yml` from a branch with `images: debian:13`. This settles whether an empty `environment:` name means no environment. If the job will not start, split `build` into two jobs gated by `if:` on the ref, one with the environment and one without, before going on. (1) Dispatch on `master` with `publish: false` and the whole list. Record each image's duration, its peak disk use (add a `df -h` step if the logs do not show it) and the result. Set `timeout-minutes` to about twice the slowest image, and change the runner size if disk or a DIB tmpfs `ENOSPC` calls for it. For tmpfs, prefer `DIB_NO_TMPFS=1` on a 200 GB disk over a bigger VM. (2) Confirm an `{job="image-build-summary"}` line from a runner host arrived in Loki (D9). (3) Dispatch `publish: true, images: debian:13`. Confirm that `curl -sI https://images.shakenfist.com/debian:13/latest.qcow2` shows the new `Last-Modified`, that the served file's sha256 matches the one the job logged, and that retention left seven images. (4) Write the measurements into this file under *Results*. Then **stop for the operator's go-ahead** on cutover. |
-| 2e | medium | sonnet | none | **Cutover, as two pull requests merged the same day in D10's order.** *33fl:* remove the `sfyow image build` cron entry and the `SF_IMAGES_LOKI_URL`/`SF_IMAGES_LOKI_TENANT` environment lines from `sfyow-images.yml` (use `state: absent`, so the deploy removes them rather than merely forgetting them). Leave the checkout task in place until 2f. Add the D8 Grafana rule to `config/maui/grafana/alerting/rules.yml`, modelled on `image-nightly-stale`: it fires when `count_over_time({job="image-build-summary"}[72h])` on the sfyow tenant is zero. Update `docs/sfyow-images.md`. *images:* add `schedule` to `image-build.yml`, with an offset minute (fleet convention), a comment on the 60-day disable that points at the D8 rule, and a note that GitHub delays scheduled starts by hours. Remove the `SF_IMAGES_PUBLISH_TARGET` default from `build.sh`, so a publishing run with no target exits 2 before the preamble, and extend `tools/test-build-arguments.sh` for that. Replace `docs/build-host.md` with `docs/nightly-build.md`, covering how the workflow runs, how to rebuild one image by dispatch, where logs go (Actions, `.qcow2.log` beside the image, Loki), the publish account, and recovering when the `debian-13` runner label is broken (R3). Update the README's two links to it. Change `AGENTS.md:5`, which says "manually or via cron", and its `docs/build-host.md` link, as Phase 5 deferred to this phase. Change `ARCHITECTURE.md:13-16`. |
+| 2d | -- | -- | management session | **Prove it before switching anything.** (0) Dispatch `image-build.yml` from a branch with `images: debian:13`. This settles whether an empty `environment:` name means no environment. If the job will not start, split `build` into two jobs gated by `if:` on the ref, one with the environment and one without, before going on. (1) Dispatch on `master` with `publish: false` and the whole list. Record each image's duration, its peak disk use (add a `df -h` step if the logs do not show it) and the result. Set `timeout-minutes` to about twice the slowest image, and change the runner size if disk or a DIB tmpfs `ENOSPC` calls for it. For tmpfs, prefer `DIB_NO_TMPFS=1` on a 200 GB disk over a bigger VM. (2) Confirm an `{job="image-build-summary"}` line from a runner host arrived in Loki (D9). (3) Dispatch `publish: true, images: debian:13`. Confirm that `curl -sI https://images.shakenfist.com/debian:13/latest.qcow2` shows the new `Last-Modified`, that the served file's size matches the image rsync sent (the job logs no sha256, and rsync verifies a whole-file checksum on every transfer), and that retention left seven images. (4) Write the measurements into this file under *Results*. Then **stop for the operator's go-ahead** on cutover. |
+| 2e | medium | sonnet | none | **Cutover, as two pull requests merged the same day in D10's order.** *33fl:* remove the `sfyow image build` cron entry and the `SF_IMAGES_LOKI_URL`/`SF_IMAGES_LOKI_TENANT` environment lines from `sfyow-images.yml` (use `state: absent`, so the deploy removes them rather than merely forgetting them). Leave the checkout task in place until 2f. Add the D8 Grafana rule to `config/maui/grafana/alerting/rules.yml`, modelled on `image-nightly-stale`: it fires when `count_over_time({job="image-build-summary"}[72h])` on the sfyow tenant is zero. Update `docs/sfyow-images.md`. *images:* add `schedule` to `image-build.yml`, with an offset minute (fleet convention), a comment on the 60-day disable that points at the D8 rule, and a note that GitHub delays scheduled starts by hours. Remove the `SF_IMAGES_PUBLISH_TARGET` default from `build.sh`, so a publishing run with no target exits 2 before the preamble, and extend `tools/test-build-arguments.sh` for that. Replace `docs/build-host.md` with `docs/nightly-build.md`, covering how the workflow runs, how to rebuild one image by dispatch, where logs go (Actions, `.qcow2.log` beside the image, Loki), the publish account, scratch space and `DIB_NO_TMPFS` (carried over from `docs/build-host.md`'s "Scratch space is on disk" section), and recovering when the `debian-13` runner label is broken (R3). With the cron gone, move `export DIB_NO_TMPFS=1` into `build_one()` beside `TMP_DIR`, and drop it from the workflow's `env:` and `--preserve-env`, so that a hand-run `build.sh` on a small VM builds the way CI does. Update the README's two links to it. Change `AGENTS.md:5`, which says "manually or via cron", and its `docs/build-host.md` link, as Phase 5 deferred to this phase. Change `ARCHITECTURE.md:13-16`. |
 | 2f | medium | sonnet | none | **After three clean scheduled nights, remove what only the cron used.** *images:* delete the self-update block, the `--no-self-update` flag, its use in `image-build.yml`, `tools/test-self-update.sh` and its mentions in docs (D6). *33fl:* remove the `/srv/sf-images` checkout tasks and the `--list-images` assertion from `sfyow-images.yml`, keeping the publish account. Decide with the operator whether `/srv/sf-images/{output,cache}` is deleted, and record what was freed. |
 
 ## Risks and mitigations
@@ -478,9 +478,111 @@ also matched the author email in an old DIB patch, so the grep now
 looks for `home\.stillhq` instead of `stillhq`. The planning commit
 was rewritten locally, so the hostname never reached GitHub.
 
+**PR A's sfyow test passed on 2026-10-24 (UTC).** The branch's
+`build.sh --no-self-update debian:13`, run from a separate clone,
+published `debian-13-sfagent-20261024.qcow2` through the two-rsync
+path. Retention left seven images, and the run summary reached Loki
+as a success. PR #23 merged as `da7683b`. The first nightly after
+that, on 2026-10-25, pruned `debian-13-sfagent-20261017` from the live
+site, which exercised the delete path for real.
+
+**Step (0) of 2d: an empty `environment:` name means no environment.**
+The branch dispatch on 2026-10-24 (run 40129939801) started, built
+debian:13 on a debian-13 VM in 3m43s, and asked for no environment.
+`build` stays one job.
+
+**2c, as built (2026-10-25):**
+
+* The `images-publish` environment was created with a custom branch
+  policy allowing only `master`, and no reviewers. The policy was in
+  place before any secret was added.
+* The runners publish over the WireGuard tunnel to sfyow, not over a
+  new edge rule. Their NAT egress is sf-1, and the tunnel's existing
+  rule already lets the LAN reach sfyow's SSH. So
+  `IMAGES_PUBLISH_TARGET` names sfyow's tunnel address with an empty
+  path, `IMAGES_PUBLISH_KNOWN_HOSTS` names the host key under that
+  same address, and the account's `from=` is sf-1's LAN address.
+* The path is empty because rrsync strips a leading `/` and roots
+  every path at the document root.
+* rrsync runs with `-no-lock`. Without it, rrsync takes a lock per
+  directory and the matrix's parallel uploads would fail.
+* The operator generated the key pair and set all five secrets.
+  Nothing in this session ever held the private half.
+* The account, its sshd rule and the group-writable docroot are a
+  33fl change, deployed by the operator.
+
+**2d step (1) failed two of fourteen images, both because of DIB's
+tmpfs.** On an `m` VM (8 GB), DIB's two tmpfs mounts, the chroot and
+the image, may each grow to half of RAM. ubuntu:22.04 hit
+`No space left on device` writing its initramfs. debian-gnome:12's VM
+died mid-build, leaving no log and no Loki summary. Both images built
+on sfyow (31 GB) the same nights. As this table's 2d brief prefers,
+the workflow now sets `DIB_NO_TMPFS=1` rather than asking for a bigger
+VM. Step (1) is re-run after that merges, and `timeout-minutes` is set
+from the re-run, because builds on disk are slower than in RAM.
+
+**2d step (3) ran before step (1) was clean**, with the operator's
+agreement. debian:13 built fine in step (1), and the tmpfs failures
+have nothing to do with publishing.
+
+**2d step (3)'s sha256 check was corrected at its source.** The brief
+asked for the served file's sha256 to match "the one the job logged",
+but `build.sh` logs no checksum. rsync already verifies a whole-file
+checksum on every transfer, so the check is now the served size
+against the size rsync sent. Publishing a checksum alongside each
+image would be a change to what the site serves, not to how the build
+runs.
+
 ## Results
 
-To be filled in by step 2d and the cutover.
+**2d step (1), first attempt** (run 40238608134, 2026-10-25 UTC, `m`
+runners, DIB in tmpfs). 12 of 14 images built. Wall-clock per job:
+
+| Image | Minutes | Result |
+|---|---|---|
+| ubuntu:24.04 | 9.2 | built |
+| rocky:8 | 9.0 | built |
+| debian-gnome:12 | 7.2 | VM died (tmpfs) |
+| rocky:9 | 6.5 | built |
+| centos:9-stream | 5.9 | built |
+| debian-xfce:12 | 4.8 | built |
+| debian-docker:12, debian-gnome:13 | 4.4 | built |
+| ubuntu:22.04 | 4.2 | ENOSPC (tmpfs) |
+| debian:12 | 4.2 | built |
+| rocky:10, debian-xfce:13 | 4.1 | built |
+| debian-docker:13 | 3.8 | built |
+| debian:13 | 3.4 | built |
+
+**2d step (2): Loki works from a runner.** Thirteen
+`{job="image-build-summary"}` streams from that run arrived in the
+build's tenant, one for every image except debian-gnome:12, whose VM
+died before it could push one.
+
+**2d step (3): the first publish from a runner worked** (run
+40254427992, 2026-10-26 UTC, debian:13, `publish: true`). The build took
+2m46s, and the job 5m18s overall.
+
+* rsync sent `debian-13-sfagent-20261026.qcow2` and its log over the
+  tunnel at about 4 MB/s: 441 MB in 1m43s.
+* `latest.qcow2` followed as a symlink in the second rsync.
+* images.shakenfist.com serves `latest.qcow2` and the dated name with
+  `Last-Modified: Mon, 26 Oct 2026 01:34:46 GMT` and
+  `Content-Length: 440980992`, which is the image size rsync sent.
+* Retention removed `debian-13-sfagent-20261018` and its log, leaving
+  seven images, seven logs and `latest.qcow2`.
+* The new files belong to `sf-images-publish:sf-images` and sit beside
+  the cron's root-owned ones.
+* The run's log and summary reached Loki.
+* A full nightly is about 14.7 GB: the sum of every label's
+  `latest.qcow2` on 2026-10-26. rocky:8 is the largest at 1.9 GB, and
+  the desktop images, ubuntu:24.04 and centos:9-stream are each about
+  1.4 GB. If the matrix's four parallel uploads share the 4.3 MB/s,
+  the uploads take about an hour in total. If each upload gets that
+  rate, they take about 15 minutes. This run had one upload, so it
+  cannot tell the two apart; the first publishing run of the whole
+  list will. Either way it is the
+  slower copy the operator accepted when choosing to publish over the
+  WAN, and it fits well inside the night.
 
 ## Back brief
 

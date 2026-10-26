@@ -584,6 +584,44 @@ died before it could push one.
   slower copy the operator accepted when choosing to publish over the
   WAN, and it fits well inside the night.
 
+**2d step (1), re-run after the tmpfs fix** (run 40275203133,
+2026-10-26 UTC, `m` runners, `DIB_NO_TMPFS=1`, publishing off). All 14
+images built, and all 14 summaries reached Loki. Time per job:
+
+| Image | Minutes |
+|---|---|
+| debian-gnome:13 | 14.7 |
+| debian-gnome:12 | 13.4 |
+| ubuntu:24.04 | 11.1 |
+| ubuntu:22.04 | 11.0 |
+| rocky:8 | 9.0 |
+| debian-xfce:12 | 7.5 |
+| debian-xfce:13 | 6.6 |
+| rocky:9 | 5.8 |
+| rocky:10, debian-docker:12 | 5.2 |
+| debian:12 | 5.1 |
+| debian:13 | 5.0 |
+| centos:9-stream | 4.4 |
+| debian-docker:13 | 4.2 |
+
+* Building on disk hit the desktop images hardest compared with the
+  tmpfs run: debian-gnome:13 went from 4.4 to 14.7 minutes, and the xfce
+  images took about 1.6 times as long. ubuntu:24.04 and rocky:8 barely
+  changed. `timeout-minutes` is now 30, about twice the slowest image.
+  Every runner build is a cold-cache build, so there is no warm case
+  to allow for.
+* Peak disk use was not measured: nothing in the logs shows it, and no
+  `df` step was added. The largest output image is 1.9 GB (rocky:8),
+  and DIB's scratch space is a few times an image, against 200 GB.
+* **The run took 6h39m of wall-clock time for 108 minutes of builds.**
+  It was dispatched at 05:37 UTC, the first build started at 05:50 and
+  the last finished at 12:16. Between those times the jobs mostly
+  waited for VM runners: the fleet's CI was backed up that day, and at
+  the worst point jobs waited about 2h25m. With four builds at a time
+  and no queue, the same builds take about half an hour. 2e should
+  expect a scheduled nightly to take hours on a busy day, and should
+  not assume it finishes by any particular time.
+
 ## Back brief
 
 Before executing any step, back brief the operator. There are two

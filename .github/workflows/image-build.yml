@@ -84,11 +84,12 @@ jobs:
     # here, reviewed like any other. m has 200 GB of disk, plenty for
     # one image.
     runs-on: [self-hosted, vm, debian-13, m]
-    # A first guess for a cold-cache build of the desktop images, to be
-    # replaced by about twice the slowest image once real runs have
-    # been measured. It bounds a hung build, which would otherwise hold
-    # a VM the rest of the fleet's CI needs for six hours.
-    timeout-minutes: 120
+    # About twice the slowest image. Every run here is a cold-cache
+    # build on a fresh VM, and on disk the slowest, debian-gnome:13,
+    # took 14.7 minutes on 2026-10-26. It bounds a hung build, which
+    # would otherwise hold a VM the rest of the fleet's CI needs for six
+    # hours. Raise it with a new measurement if an image grows past it.
+    timeout-minutes: 30
     # The publishing credential and the Loki settings are secrets in the
     # images-publish environment, which only master may deploy from.
     # On master the job always takes it, publishing or not, so that a

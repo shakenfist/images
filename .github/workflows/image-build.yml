@@ -2,10 +2,10 @@ name: Image build
 
 # Builds the images on the fleet's ephemeral CI VMs, one image to a
 # job, by running build.sh as the build host's cron does. The one
-# difference is DIB_NO_TMPFS, set on the build step below because these
-# VMs have a quarter of the build host's RAM. The build logic stays in
-# build.sh; this file only decides where it runs, with what, and
-# whether it publishes.
+# difference in how DIB builds is DIB_NO_TMPFS, set on the build step
+# below because these VMs have a quarter of the build host's RAM. The
+# build logic stays in build.sh; this file only decides where it runs,
+# with what, and whether it publishes.
 #
 # For now this is started by hand only, and the build host's cron is
 # still what keeps the site fresh. A dispatch with publish off builds

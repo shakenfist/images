@@ -1,16 +1,19 @@
 name: Image build
 
 # Builds the images on the fleet's ephemeral CI VMs, one image to a
-# job, by running build.sh as the build host's cron does. The one
-# difference in how DIB builds is DIB_NO_TMPFS, set on the build step
-# below because these VMs have a quarter of the build host's RAM. The
-# build logic stays in build.sh; this file only decides where it runs,
-# with what, and whether it publishes.
+# job, by running build.sh. The build logic stays in build.sh; this
+# file only decides where it runs, with what, and whether it
+# publishes.
 #
-# For now this is started by hand only, and the build host's cron is
-# still what keeps the site fresh. A dispatch with publish off builds
-# and throws the result away, which is how a build.sh change is tried
-# on a branch before it merges.
+# The conductor dispatches this nightly on master with publish on, and
+# that is what keeps the site fresh. A dispatch with publish off
+# builds and throws the result away, which is how a build.sh change
+# is tried on a branch before it merges.
+#
+# Do not add a schedule: trigger. GitHub's scheduler ran hours late
+# and skipped nights across the fleet, and a schedule added as a
+# backup would fire after the conductor's run and rebuild the same
+# night.
 
 permissions:
   contents: read
@@ -76,13 +79,11 @@ jobs:
   build:
     name: Build ${{ matrix.image }}
     needs: list
-    # This line is the declared builder OS. It is the same Debian
-    # release the build host runs, deliberately, so that moving the
-    # build changes where the images are made and not what they are
-    # made with: any difference afterwards is down to the environment,
-    # not a new release. Moving to a newer builder is a one-line change
-    # here, reviewed like any other. m has 200 GB of disk, plenty for
-    # one image.
+    # This line is the declared builder OS: every image is made with
+    # this Debian release's tools, so changing it changes what the
+    # images are built with. That makes moving to a newer builder a
+    # one-line change here, reviewed like any other. m has 200 GB of
+    # disk, plenty for one image.
     runs-on: [self-hosted, vm, debian-13, m]
     # The job includes the upload on a publishing run, so this is the
     # slowest build plus the slowest upload, with margin. Every build
@@ -143,28 +144,19 @@ jobs:
       # --no-self-update because this checkout is already exactly the
       # commit the run was asked to build; the update would pull master
       # over a branch.
-      #
-      # DIB_NO_TMPFS because diskimage-builder otherwise builds in two
-      # tmpfs mounts, the chroot and the image, each allowed half of
-      # RAM with nothing capping the pair. The build host's 31 GB
-      # hides that. On this 8 GB VM ubuntu:22.04 filled its 4 GB, and
-      # debian-gnome:12's VM died mid-build with no log, which is what
-      # the pair overrunning RAM looks like. The VM's disk is 200 GB
-      # and nothing else uses it.
       - name: Build ${{ matrix.image }}
         env:
           IMAGE: ${{ matrix.image }}
           PUBLISH: ${{ github.ref == 'refs/heads/master' && inputs.publish }}
           SF_IMAGES_LOKI_URL: ${{ secrets.SF_IMAGES_LOKI_URL }}
           SF_IMAGES_LOKI_TENANT: ${{ secrets.SF_IMAGES_LOKI_TENANT }}
-          DIB_NO_TMPFS: '1'
         run: |
           if [ "${PUBLISH}" = "true" ]; then
-            # Unset, build.sh would publish to a local directory on this throwaway VM.
+            # Unset, build.sh would refuse; this says which secret is missing.
             [ -n "${SF_IMAGES_PUBLISH_TARGET:-}" ] || { echo 'Publishing, but SF_IMAGES_PUBLISH_TARGET is empty.' >&2; exit 2; }
-            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT,DIB_NO_TMPFS ./build.sh --no-self-update "${IMAGE}"
+            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update "${IMAGE}"
           else
-            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT,DIB_NO_TMPFS ./build.sh --no-self-update --no-push "${IMAGE}"
+            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update --no-push "${IMAGE}"
           fi
 
       - name: Remove the publishing credentials

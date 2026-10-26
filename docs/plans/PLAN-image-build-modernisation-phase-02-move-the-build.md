@@ -22,10 +22,11 @@ other phases are sections of the master plan.
 * The `build.sh` changes that publishing from another host needs.
   `build.sh` still builds one image per call; the workflow calls it, and
   the build logic is not rewritten in YAML.
-* Retiring sfyow's cron job on the same day the workflow's schedule
-  starts, plus the 33fl changes that involves.
+* Retiring sfyow's cron job on the same day the conductor starts
+  dispatching the workflow nightly, plus the 33fl and private-ci changes
+  that involves (D2, D10).
 * A watcher outside this repository for the failure the move creates:
-  GitHub switching the schedule off (D8).
+  the nightly dispatch stopping without anyone noticing (D8).
 * Documentation for the new mechanism, replacing the cron mechanism.
 
 **Out:**
@@ -156,13 +157,26 @@ reviewable. `m` (200 GB) is enough disk for one image with room to
 spare. `m-bigdisk` would be paying for space no single-image job uses.
 Step 2d measures the real numbers and moves the size if they say so.
 
-**D2. Only `schedule` and `workflow_dispatch` trigger the workflow.
-There is no `pull_request` and no `push`.** Every VM runner holds
+**D2. Only `workflow_dispatch` triggers the workflow. There is no
+`schedule`, no `pull_request` and no `push`.** The nightly run is
+dispatched by the conductor on maui, the same way, and from the same
+module, as 33fl's nightly reports (`conductor/reports.py` in
+private-ci). GitHub's `schedule` trigger is best effort, and from
+2026-08-26 the fleet found it unusable: 33fl's reports ran three hours
+late on two nights and were skipped entirely on two others, and an hourly
+cron in client-python delivered six of its twenty-four firings. A
+`workflow_dispatch` starts within seconds, and a dispatch-only workflow
+is also immune to GitHub disabling the schedules of a quiet repository.
+This was corrected on 2026-10-27, before cutover; the plan first said
+`schedule`. Do not add a `schedule` as a backup. It would eventually
+fire hours after the conductor's run and rebuild the same night again.
+
+There is no `pull_request` and no `push`. Every VM runner holds
 `id_ci`, so any code a fork can get onto one reaches the whole CI mesh.
 A build job also runs as root. The publish credential sits behind a
 GitHub environment, `images-publish`. Its deployment branch policy
 allows `master` only, and it has no required reviewers, for the same
-reason `audit-write` has none: a schedule has nobody to approve it. The
+reason `audit-write` has none: a nightly run has nobody to approve it. The
 publishing step also carries `if: github.ref == 'refs/heads/master'`, so
 a dispatch from a branch shows the step as skipped rather than as a
 failed environment check. A dispatch can still build any branch with
@@ -237,24 +251,31 @@ first guess for a cold-cache build of the desktop images, and step 2d
 replaces it with a measured number. (2d set it to 60 minutes: the
 slowest build plus the slowest upload, with margin. See *Results*.) A
 `workflow_dispatch` input `images` (empty means the whole list) and a
-boolean `publish` (default `false`) let one image be rebuilt by hand. A
-scheduled run always publishes.
+boolean `publish` (default `false`) let one image be rebuilt by hand.
+The conductor's nightly dispatch passes `publish: true`.
 
-**D8. Moving the schedule into this repository creates a new silent
-failure, so this phase adds a watcher outside it.** GitHub disables
-scheduled workflows in a repository with no commits for 60 days. Today
-that can only switch off the freshness watchdog. After this phase it
-also switches off the build, at the same moment and from the same
-cause. Nothing would build, and the one thing meant to notice would be
-off too. The master plan listed "a second watcher outside this
-repository" under Future work. This phase makes it necessary, so it is
-pulled in. The watcher is a Grafana alert rule in 33fl, beside the
-existing `image-nightly-stale` rule in
-`config/maui/grafana/alerting/rules.yml`, that fires when no
-`{job="image-build-summary"}` line has arrived in Loki for 72 hours. It
-depends on neither GitHub's scheduler nor this repository, and it also
-catches log shipping from the runners breaking. That makes D9 a
-precondition for it.
+**D8. Moving the trigger out of sfyow's cron creates new silent
+failures, so this phase adds a watcher outside the chain that runs the
+build.** The nightly build now depends on the conductor dispatching,
+on GitHub accepting the dispatch, on VM runners picking up the jobs and
+on the runners shipping logs. Two watchers cover that chain:
+
+* The conductor's dispatch history. 33fl's existing
+  `report-dispatch-stale` rule alerts per workflow on
+  `conductor_report_last_dispatch_timestamp_seconds`, so a conductor
+  that stops dispatching `image-build.yml` alerts like a stalled report.
+  This needs nothing new beyond the conductor target.
+* A Grafana alert rule in 33fl, beside `image-nightly-stale` in
+  `config/maui/grafana/alerting/rules.yml`, on the `Loki (sfyow)`
+  datasource. It fires when no `{job="image-build-summary"}` line has
+  arrived for 72 hours. It catches every way the chain can fail after
+  the dispatch: GitHub dropping it, runners never starting it, or log
+  shipping breaking. That makes D9 a precondition for it.
+
+The master plan listed "a second watcher outside this repository" under
+Future work. This phase makes it necessary, so it is pulled in. (The
+plan first framed D8 around GitHub's 60-day schedule disable. That no
+longer applies to a dispatch-only workflow; D2 records the change.)
 
 **D9. Runners keep shipping to Loki.** `SF_IMAGES_LOKI_URL` and
 `SF_IMAGES_LOKI_TENANT` become secrets in the `images-publish`
@@ -266,16 +287,28 @@ line arriving from a runner, rather than assume it. If the proxy will
 not carry it, the fix is a `NO_PROXY` entry for the Loki host on the
 `build.sh` step, not a change to `build.sh`.
 
-**D10. The cutover happens on one day, in a fixed order.** The master
-plan says to retire the cron "in the same change" that the workflow
-starts. Across two repositories, one change means one day. First the
-33fl pull request merges and deploys: it removes the cron job and its
-two environment lines, and adds the D8 alert. Then the images pull
-request that adds the `schedule` trigger merges. Done in that order,
-the worst case is one night with no build, which the 72-hour watchdog
-tolerates. Done in the other order, the worst case is two schedulers
-publishing into the same directories on the same night. Rollback is
-reverting both, 33fl first.
+**D10. The cutover happens on one day, in a fixed order, across three
+repositories.** The master plan says to retire the cron "in the same
+change" that the workflow starts. Across three repositories, one change
+means one day:
+
+1. **33fl** merges and deploys. It removes the cron job and its two
+   environment lines, and adds the D8 Loki rule. Deploy it after that
+   day's 05:00 UTC cron run has published.
+2. **private-ci** merges and the conductor is redeployed, with
+   `image-build.yml` as a dispatch target. A new target is primed, not
+   fired, so its first dispatch is the next 01:30 Canberra slot, about
+   ten hours after a cron run at 05:00 UTC. That is no gap at all.
+3. **images** merges. It removes `build.sh`'s local publish target, so
+   it must not merge while the cron still runs, and carries the docs.
+   Nothing in it is needed for the first dispatch, because `master`'s
+   workflow already publishes when asked.
+
+Done in that order, the worst case is one night with no build, which
+the 72-hour watcher tolerates. With the conductor first, the worst case
+is two builders publishing into the same directories on the same day.
+Rollback is reverting private-ci first, then 33fl, and redeploying
+both.
 
 **D11. The `build.sh` step under `sudo` names every variable it
 passes.** It runs as `sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update "<image>"`.
@@ -297,8 +330,8 @@ Each lettered step is one commit, unless its brief says otherwise.
 | 2b | high | opus | none | **Add `.github/workflows/image-build.yml`, dispatch-only.** Triggers: `workflow_dispatch` only, with inputs `images` (string, default empty, meaning `build.sh --list-images`) and `push` (boolean, default false). **No** `schedule` yet; 2e adds it. **No** `pull_request` or `push` trigger, ever (D2). Top-level `permissions: contents: read`. Job 1, `list`, on `[self-hosted, static]`, `timeout-minutes: 10`: run `tools/image-matrix.sh` (new, small, under `tools/` per the five-line rule), which prints `build.sh --list-images`, or the `images` input, as a JSON array to `GITHUB_OUTPUT`. Job 2, `build`, `needs: list`, `runs-on: [self-hosted, vm, debian-13, m]` with a comment saying this line **is** the declared builder OS and why it matches sfyow (D1), `strategy: {fail-fast: false, max-parallel: 4, matrix: {image: fromJSON(...)}}`, `timeout-minutes: 120` marked as a first guess, and `environment: images-publish` only when publishing. Use a separate job or an expression so a `push: false` dispatch from any branch needs no environment, and add `if: github.ref == 'refs/heads/master'` to the publishing path (D2). Checkout with `persist-credentials: false`. A step writes the SSH key and the pinned `known_hosts` line from secrets into `${RUNNER_TEMP}` with mode 600 and exports `RSYNC_RSH="ssh -i <key> -o IdentitiesOnly=yes -o UserKnownHostsFile=<kh> -o StrictHostKeyChecking=yes"`. Put that in `tools/`, not inline, if it exceeds five lines. The build step runs exactly as D11 states, passing `--no-push` when not publishing. A final `if: always()` step shreds the key. English-sentence `name:` on every job and step. Concurrency: `group: image-build-${{ github.ref }}`, `cancel-in-progress: false`. Read `.github/workflows/image-freshness.yml` and `ci.yml` for house style, and `development/.github/workflows/consistency-audit.yml:225-262` for the environment precedent. Confirm `actionlint` passes through pre-commit. |
 | 2c | high | opus | worktree | **33fl: a publish-only account on sfyow.** In the 33fl repository (`/srv/kasm_profiles/mikal/vscode/src/mach33labs/33fl`), extend `sfyow-images.yml`, or add a playbook beside it if that reads better, and document in `docs/sfyow-images.md`. Create an unprivileged user (suggested name `sf-images-publish`) that can write to `/srv/www/images.shakenfist.com`. Look at `sfyow-web.yml` and `docs/sfyow-web.md` for who owns the docroot now, and prefer a shared group over changing ownership, so apache and today's root-run cron keep working. Install `rrsync` (Debian ships it in the `rsync` package, as `/usr/bin/rrsync` on trixie; verify that). Give the user an `authorized_keys` entry `restrict,from="<sf-1 egress>",command="/usr/bin/rrsync /srv/www/images.shakenfist.com" <pubkey>`. The public key and the sf-1 address are variables in 33fl's normal secret and inventory handling. Find how `conductor.yml` handles `sfcbr_ci_images_key` and do the same. **Do not** remove the cron job in this step; that is 2e. The operator generates the key pair. The management session then creates the `images-publish` environment and its secrets (`IMAGES_PUBLISH_SSH_KEY`, `IMAGES_PUBLISH_KNOWN_HOSTS`, `IMAGES_PUBLISH_TARGET`, `SF_IMAGES_LOKI_URL`, `SF_IMAGES_LOKI_TENANT`) with `gh`, after asking, because they are outward-facing settings. Deployment branch policy: `master` only, no reviewers. **Set or check the policy before adding any secret.** GitHub creates an environment named by a workflow the first time a job uses it, with no branch policy. So a `master` dispatch made after PR A merges may already have created `images-publish`, unprotected. |
 | 2d | -- | -- | management session | **Prove it before switching anything.** (0) Dispatch `image-build.yml` from a branch with `images: debian:13`. This settles whether an empty `environment:` name means no environment. If the job will not start, split `build` into two jobs gated by `if:` on the ref, one with the environment and one without, before going on. (1) Dispatch on `master` with `publish: false` and the whole list. Record each image's duration, its peak disk use (add a `df -h` step if the logs do not show it) and the result. Set `timeout-minutes` to the slowest build plus the slowest upload, with margin (the job includes the upload on a publishing run), and change the runner size if disk or a DIB tmpfs `ENOSPC` calls for it. For tmpfs, prefer `DIB_NO_TMPFS=1` on a 200 GB disk over a bigger VM. (2) Confirm an `{job="image-build-summary"}` line from a runner host arrived in Loki (D9). (3) Dispatch `publish: true, images: debian:13`. Confirm that `curl -sI https://images.shakenfist.com/debian:13/latest.qcow2` shows the new `Last-Modified`, that the served file's size matches the image rsync sent (the job logs no sha256, and rsync verifies a whole-file checksum on every transfer), and that retention left seven images. (4) Write the measurements into this file under *Results*. Then **stop for the operator's go-ahead** on cutover. |
-| 2e | medium | sonnet | none | **Cutover, as two pull requests merged the same day in D10's order.** *33fl:* remove the `sfyow image build` cron entry and the `SF_IMAGES_LOKI_URL`/`SF_IMAGES_LOKI_TENANT` environment lines from `sfyow-images.yml` (use `state: absent`, so the deploy removes them rather than merely forgetting them). Leave the checkout task in place until 2f. Add the D8 Grafana rule to `config/maui/grafana/alerting/rules.yml`, modelled on `image-nightly-stale`: it fires when `count_over_time({job="image-build-summary"}[72h])` on the sfyow tenant is zero. Update `docs/sfyow-images.md`. *images:* add `schedule` to `image-build.yml`, with an offset minute (fleet convention), a comment on the 60-day disable that points at the D8 rule, and a note that GitHub delays scheduled starts by hours. Remove the `SF_IMAGES_PUBLISH_TARGET` default from `build.sh`, so a publishing run with no target exits 2 before the preamble, and extend `tools/test-build-arguments.sh` for that. Replace `docs/build-host.md` with `docs/nightly-build.md`, covering how the workflow runs, how to rebuild one image by dispatch, where logs go (Actions, `.qcow2.log` beside the image, Loki), the publish account, scratch space and `DIB_NO_TMPFS` (carried over from `docs/build-host.md`'s "Scratch space is on disk" section), and recovering when the `debian-13` runner label is broken (R3). With the cron gone, move `export DIB_NO_TMPFS=1` into `build_one()` beside `TMP_DIR`, and drop it from the workflow's `env:` and `--preserve-env`, so that a hand-run `build.sh` on a small VM builds the way CI does. Update the README's two links to it. Change `AGENTS.md:5`, which says "manually or via cron", and its `docs/build-host.md` link, as Phase 5 deferred to this phase. Change `ARCHITECTURE.md:13-16`. |
-| 2f | medium | sonnet | none | **After three clean scheduled nights, remove what only the cron used.** *images:* delete the self-update block, the `--no-self-update` flag, its use in `image-build.yml`, `tools/test-self-update.sh` and its mentions in docs (D6). *33fl:* remove the `/srv/sf-images` checkout tasks and the `--list-images` assertion from `sfyow-images.yml`, keeping the publish account. Decide with the operator whether `/srv/sf-images/{output,cache}` is deleted, and record what was freed. |
+| 2e | medium | sonnet | worktree | **Cutover, as three pull requests merged the same day in D10's order: 33fl, then private-ci, then images.** Prepare all three; merging and deploying are the operator's. *33fl:* remove the `sfyow image build` cron entry and the `SF_IMAGES_LOKI_URL`/`SF_IMAGES_LOKI_TENANT` environment lines from `sfyow-images.yml`, with `state: absent` so the deploy removes them rather than merely forgetting them. Leave the checkout task in place until 2f. Add the D8 rule to `config/maui/grafana/alerting/rules.yml`, modelled on `image-nightly-stale`, on the `Loki (sfyow)` datasource (uid `cg54qgsjqi1jec` in `templates/grafana-datasource-provisioning.yml.j2`): it fires when `count_over_time({job="image-build-summary"}[72h])` is zero. Update `docs/sfyow-images.md`. *private-ci:* add `shakenfist/images` `image-build.yml` on `master`, with `publish: true`, to `conductor/reports.py`'s `TARGETS`. Give a target an optional `inputs` key, which `_dispatch_target` passes to `github.dispatch_workflow` (it already takes `inputs`). The dashboard's "Run reports now" button (`dispatch_now`) must not fire the image build: a full rebuild and publish uses the fleet for hours and is not a report. Correct the comments this makes false: the module docstring, "All four run on the static claude-code runner", and "every target is in the same repository". Extend `conductor/tests/test_reports.py` and `docs/nightly-report-dispatch.md`. Check, and report rather than change, whether the conductor's GitHub credential can dispatch workflows in `shakenfist/images`. *images:* `image-build.yml` stays dispatch-only; correct its header, which says the cron still keeps the site fresh, to say the conductor dispatches it nightly, and that a `schedule` must not be added (D2). Remove the `SF_IMAGES_PUBLISH_TARGET` default from `build.sh`, so a publishing run with no target exits 2 before the preamble, and extend `tools/test-build-arguments.sh` for that. Move `export DIB_NO_TMPFS=1` into `build_one()` beside `TMP_DIR`, and drop it from the workflow's `env:` and `--preserve-env`, so that a hand-run `build.sh` on a small VM builds the way CI does. Replace `docs/build-host.md` with `docs/nightly-build.md`, covering how the nightly is dispatched and by what, how to rebuild one image by dispatch, where logs go (Actions, `.qcow2.log` beside the image, Loki), the publish account, scratch space and `DIB_NO_TMPFS` (carried over from `docs/build-host.md`'s "Scratch space is on disk" section), that a busy fleet can stretch a nightly to hours, and recovering when the `debian-13` runner label is broken (R3). Update the README's three links to it. Change `AGENTS.md:5`, which says "manually or via cron", and its `docs/build-host.md` link, as Phase 5 deferred to this phase. Change `ARCHITECTURE.md`'s paragraph that says the script runs nightly from cron. |
+| 2f | medium | sonnet | none | **After three clean nightly runs, remove what only the cron used.** *images:* delete the self-update block, the `--no-self-update` flag, its use in `image-build.yml`, `tools/test-self-update.sh` and its mentions in docs (D6). *33fl:* remove the `/srv/sf-images` checkout tasks and the `--list-images` assertion from `sfyow-images.yml`, keeping the publish account. Decide with the operator whether `/srv/sf-images/{output,cache}` is deleted, and record what was freed. |
 
 ## Risks and mitigations
 
@@ -349,9 +382,9 @@ complete file. D10 governs the cutover itself.
 is a gate, and D9 names the fix.
 
 **R6. sfcbr capacity.** Fourteen VM jobs a night compete with the
-fleet's CI. *Mitigation:* `max-parallel: 4`, a schedule outside working
-hours, and the conductor's right-sizing reports, which will show
-whether `m` is wrong.
+fleet's CI. *Mitigation:* `max-parallel: 4`, a dispatch at 01:30
+Canberra time, outside working hours, and the conductor's right-sizing
+reports, which will show whether `m` is wrong.
 
 **R7. sf-1's egress address changes.** The `from=` restriction then
 rejects every publish. This fails closed: every leg of the matrix goes
@@ -377,8 +410,9 @@ Each item can be checked by running something:
 - [ ] `git grep -nE 'home\.stillhq|192\.168\.|BEGIN OPENSSH' -- ':!docs/plans'`
   prints nothing. The plans are excluded because this line matches
   itself; read the plan diff by eye instead.
-- [ ] A scheduled (not dispatched) run of `image-build.yml` built and
-  published every image in `build.sh --list-images`. Its URL is under
+- [ ] A conductor-dispatched nightly run of `image-build.yml`, with
+  `publish: true` and an empty image list, built and published every
+  image in `build.sh --list-images`. Its URL is under
   *Results*, and `tools/check-image-freshness.sh` exits 0 the following
   day.
 - [ ] `ssh sfyow sudo crontab -l -u root | grep -c build.sh` prints `0`.
@@ -534,6 +568,18 @@ checksum on every transfer, so the check is now the served size
 against the size rsync sent. Publishing a checksum alongside each
 image would be a change to what the site serves, not to how the build
 runs.
+
+**2026-10-27 (AEDT): the nightly trigger changed from GitHub's
+`schedule` to a conductor dispatch, before cutover.** While preparing
+2e, a survey of 33fl found that its four nightly report workflows
+carry no `schedule` on purpose, because GitHub's scheduler had been
+late by hours and had skipped nights outright since 2026-08-26. The
+conductor on maui dispatches them instead. The operator chose the same
+for the image build. D2, D8, D10, R6, the 2e and 2f briefs and the
+Definition of done were corrected at their source, and the cutover
+became three pull requests instead of two. A side benefit is the time:
+01:30 Canberra is outside working hours, where sfyow's 05:00 UTC cron
+landed in the middle of the Australian afternoon.
 
 ## Results
 

@@ -420,9 +420,12 @@ into 33fl, so it has its own file, which holds the survey, the
 decisions and the step plan. In outline: one
 `[self-hosted, vm, debian-13, m]` job per image, publishing through
 an rrsync-confined key that only sfcbr's egress address can use;
-the sfyow cron is retired on the day the schedule starts; and a
-Grafana alert outside this repository covers GitHub disabling the
-schedule, which the move would otherwise make silent.
+the sfyow cron is retired on the day the conductor on maui starts
+dispatching the workflow nightly, because GitHub's `schedule` trigger
+proved unreliable across the fleet; and a Grafana alert outside this
+repository covers the nightly build silently stopping. The trigger
+was changed from `schedule` to a conductor dispatch on 2026-10-27,
+before cutover; the phase file records why.
 
 The original brief, kept for the record:
 
@@ -696,6 +699,14 @@ into it.
   the build and its watchdog together, so this item stopped being
   optional. Phase 2's D8 makes the decision: a Grafana alert in 33fl
   on the absence of `{job="image-build-summary"}`.
+
+  **Still open for the watchdog itself.** Phase 2 moved the build to a
+  conductor dispatch, so the 60-day disable no longer reaches it. The
+  freshness watchdog, `image-freshness.yml`, still runs from GitHub's
+  `schedule`. The fleet found that trigger late by hours and sometimes
+  skipped from 2026-08-26. A late watchdog run is harmless, but a run
+  of skipped ones hides a stale site until the D8 alert fires. Giving
+  the watchdog a conductor dispatch too is the obvious fix.
 * **Publishing checksums and signatures.** Consumers currently
   fetch `latest.qcow2` over HTTPS with no way to verify what they
   got.

@@ -45,7 +45,11 @@ extract_function() {
 
 CODE="${WORK}/code.sh"
 {
-    sed -n '/^publish_target=/,/^esac$/p' "${BUILD}"
+    # Set as the argument parser would have, for the check that
+    # refuses a publishing run with no target. tools/test-build-arguments.sh
+    # covers that refusal; here the target is always set.
+    echo 'do_not_push=0'
+    sed -n '/^publish_target=/,/^# end of the publish target check$/p' "${BUILD}"
     extract_function publish_image
     extract_function prune_published
     extract_function prune_published_in
@@ -255,19 +259,17 @@ result "a failed latest.qcow2 rsync fails the publish and keeps the old latest" 
 
 # The normalisation alone, sourced with each form of target.
 TARGET_CODE="${WORK}/target.sh"
-sed -n '/^publish_target=/,/^esac$/p' "${BUILD}" > "${TARGET_CODE}"
+{
+    echo 'do_not_push=0'
+    sed -n '/^publish_target=/,/^# end of the publish target check$/p' "${BUILD}"
+} > "${TARGET_CODE}"
 
 target_case() {
-    # $1 the target given, or '-' for unset; $2 what it should become
+    # $1 the target given; $2 what it should become
     local got
     # shellcheck disable=SC2016
-    if [ "$1" = '-' ]; then
-        got=$(env -u SF_IMAGES_PUBLISH_TARGET \
-            bash -ec 'source "$1"; printf "%s" "${publish_target}"' _ "${TARGET_CODE}" 2> "${WORK}/out")
-    else
-        got=$(SF_IMAGES_PUBLISH_TARGET="$1" \
-            bash -ec 'source "$1"; printf "%s" "${publish_target}"' _ "${TARGET_CODE}" 2> "${WORK}/out")
-    fi
+    got=$(SF_IMAGES_PUBLISH_TARGET="$1" \
+        bash -ec 'source "$1"; printf "%s" "${publish_target}"' _ "${TARGET_CODE}" 2> "${WORK}/out")
     rm -f "${SHIM_LOG}"
     if [ "${got}" = "$2" ]; then
         result "publish target '$1' becomes '$2'" ""
@@ -280,7 +282,6 @@ target_case /x/y /x/y/
 target_case /x/y/ /x/y/
 target_case host: host:
 target_case u@host:/p u@host:/p/
-target_case - /srv/www/images.shakenfist.com/
 
 # --- the build's environment ----------------------------------------
 

@@ -8,9 +8,9 @@ built daily and published to `images.shakenfist.com`.
 
 ## Documentation
 
-- [Running the build host](https://github.com/shakenfist/images/blob/master/docs/build-host.md)
-  -- how the nightly build runs, keeps itself up to date, and is
-  configured.
+- [The nightly build](https://github.com/shakenfist/images/blob/master/docs/nightly-build.md)
+  -- how the nightly build runs, how to rebuild an image by hand, and
+  where its logs go.
 - [Plans](https://github.com/shakenfist/images/blob/master/docs/plans/index.md)
   -- work in progress on this repository.
 
@@ -48,8 +48,9 @@ required by downstream tooling such as Kolla-Ansible.
 ## Building Images
 
 ```bash
-# Build all images, and publish them to images.shakenfist.com
-sudo ./build.sh
+# Build all images, and publish them to the rsync destination in
+# SF_IMAGES_PUBLISH_TARGET, which has no default
+sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET ./build.sh
 
 # Build a specific image without publishing it
 sudo ./build.sh --no-push "ubuntu:24.04"
@@ -57,7 +58,7 @@ sudo ./build.sh --no-push "ubuntu:24.04"
 
 `sudo` drops exported variables, including the two that turn on log
 forwarding below; the
-[build host documentation](https://github.com/shakenfist/images/blob/master/docs/build-host.md#building-by-hand)
+[nightly build documentation](https://github.com/shakenfist/images/blob/master/docs/nightly-build.md#building-buildsh-directly)
 shows how to pass them through.
 
 ## Log Forwarding
@@ -73,7 +74,7 @@ that was never attempted.
 Neither variable has a default. With them unset nothing is shipped,
 and the run says so only in a warning when it starts, so a deployment
 that wants build logs has to set both -- the
-[build host documentation](https://github.com/shakenfist/images/blob/master/docs/build-host.md)
+[nightly build documentation](https://github.com/shakenfist/images/blob/master/docs/nightly-build.md)
 describes where. The destination is deliberately not named here:
 this repository is public and the deployment that consumes it is
 not.

@@ -152,6 +152,53 @@ if [ $list_images_only -eq 1 ]; then
     exit 0
 fi
 
+# Where a publishing run sends what it built: an rsync destination,
+# either a local directory or [user@]host:path, holding a directory
+# per image label. Like the Loki settings below it is read from the
+# environment, because where the site lives is a property of the
+# deployment, and this repository is public.
+#
+# There is no default. A publishing run that has lost its target
+# should stop, not write the images into a local directory on
+# whichever machine it happens to be running on, and under sudo a
+# target is lost quietly unless it is named in --preserve-env. So a
+# run that will publish and has no target is refused here, with the
+# same exit status as a bad argument, before the self-update, the
+# preamble or any build. --no-push and --list-images need no target.
+#
+# Nothing here knows about SSH. rsync reads RSYNC_RSH from the
+# environment by itself, so the key and the pinned host key belong to
+# whoever starts the run, and tools/test-publish.sh can drive the same
+# code against a temporary directory. Under sudo both variables have
+# to be passed through with --preserve-env.
+#
+# A missing trailing slash is added, because the label is appended to
+# this as a path component: without it /srv/www/site and debian:13
+# would make /srv/www/sitedebian:13. A bare host: is left alone, since
+# that already ends a path.
+#
+# tools/test-build-arguments.sh extracts this stretch of the file by
+# its first and last lines.
+publish_target="${SF_IMAGES_PUBLISH_TARGET:-}"
+if [ -z "${publish_target}" ]; then
+    if [ "${do_not_push}" -eq 0 ]; then
+        echo "SF_IMAGES_PUBLISH_TARGET is not set, and this run would publish."
+        echo "Set it to an rsync destination (a directory or user@host:path),"
+        echo "or pass --no-push to build without publishing. Under sudo, name it"
+        echo "in --preserve-env."
+        exit 2
+    fi
+else
+    case "${publish_target}" in
+        */ | *:)
+            ;;
+        *)
+            publish_target="${publish_target}/"
+            ;;
+    esac
+fi
+# end of the publish target check
+
 echo "I will build the following images: ${images}"
 echo
 
@@ -233,47 +280,13 @@ elif [ "${self_update}" = 0 ]; then
     echo
 fi
 
-# Where a publishing run sends what it built: an rsync destination,
-# either a local directory or [user@]host:path, holding a directory
-# per image label. Like the Loki settings below it is read from the
-# environment, because where the site lives is a property of the
-# deployment, and this repository is public.
-#
-# Nothing here knows about SSH. rsync reads RSYNC_RSH from the
-# environment by itself, so the key and the pinned host key belong to
-# whoever starts the run, and tools/test-publish.sh can drive the same
-# code against a temporary directory. Under sudo both variables have
-# to be passed through with --preserve-env. A lost RSYNC_RSH fails
-# loudly, because ssh has no key to offer; a lost target does not, it
-# falls back to the default below.
-#
-# That default is the document root on the build host, where cron has
-# always published. It exists only until the nightly build moves off
-# that host. After that an unset target will be refused before
-# anything is built, because a publishing run that has lost its target
-# should stop, not write the images into a local directory on
-# whichever machine it happens to be running on.
-#
-# A missing trailing slash is added, because the label is appended to
-# this as a path component: without it /srv/www/site and debian:13
-# would make /srv/www/sitedebian:13. A bare host: is left alone, since
-# that already ends a path.
-publish_target="${SF_IMAGES_PUBLISH_TARGET:-/srv/www/images.shakenfist.com/}"
-case "${publish_target}" in
-    */ | *:)
-        ;;
-    *)
-        publish_target="${publish_target}/"
-        ;;
-esac
-
 # Where build logs are shipped, read from the environment so the
 # destination is a property of the deployment rather than of the
 # build. Unset means logs are not shipped at all, which is the right
 # default for anyone who clones this repository and runs it: a build
 # should not post to somebody else's log aggregator because the
 # address was baked into the script. The run says so when it starts,
-# below; see docs/build-host.md for where the build host sets them.
+# below; see docs/nightly-build.md for where the nightly build sets them.
 #
 # Everything from here to the traps is defined before the preamble
 # that prepares the build host, so that a preamble failure can still
@@ -688,6 +701,14 @@ function build_one () {
     # own tmpfs for each build under this directory as it did under /tmp.
     export TMP_DIR="/srv/sf-images/tmp"
     mkdir -p "${TMP_DIR}"
+
+    # Build on disk rather than in diskimage-builder's tmpfs. DIB
+    # mounts two of them, the chroot and the image, and lets each grow
+    # to half of RAM with nothing capping the pair. On an 8 GB CI VM
+    # that ran out of space (ubuntu:22.04 failed writing its initramfs)
+    # or killed the VM mid-build with no log. Disk is plentiful where
+    # this runs and RAM is not, so it is the same everywhere.
+    export DIB_NO_TMPFS=1
 
     # Note the default here is "nofb nomodeset gfxpayload=text" which breaks
     # graphical consoles if you choose to install one later...

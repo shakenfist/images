@@ -13,11 +13,12 @@ Images are built using OpenStack's
 5. Pushes the build log to Loki (sfyow tenant)
 6. Publishes to the image repository
 
-The script runs nightly from cron on a single build host, and
-fast-forwards its own checkout before it starts. See
-[docs/build-host.md](docs/build-host.md) for how that works, why it
-had to be added, and how to check whether a merged change is actually
-running.
+The conductor dispatches `.github/workflows/image-build.yml` nightly,
+which runs the script once per image on an ephemeral CI VM and
+publishes each result to the image server. See
+[docs/nightly-build.md](docs/nightly-build.md) for how that works,
+how to rebuild an image by hand, and how to check whether a merged
+change is actually running.
 
 ## Element System
 

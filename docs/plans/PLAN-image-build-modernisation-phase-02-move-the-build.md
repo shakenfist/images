@@ -383,8 +383,8 @@ is a gate, and D9 names the fix.
 
 **R6. sfcbr capacity.** Fourteen VM jobs a night compete with the
 fleet's CI. *Mitigation:* `max-parallel: 4`, a dispatch at 01:30
-Canberra time, outside working hours, and the conductor's right-sizing reports, which will show
-whether `m` is wrong.
+Canberra time, outside working hours, and the conductor's right-sizing
+reports, which will show whether `m` is wrong.
 
 **R7. sf-1's egress address changes.** The `from=` restriction then
 rejects every publish. This fails closed: every leg of the matrix goes

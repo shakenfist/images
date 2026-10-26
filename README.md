@@ -49,8 +49,9 @@ required by downstream tooling such as Kolla-Ansible.
 
 ```bash
 # Build all images, and publish them to the rsync destination in
-# SF_IMAGES_PUBLISH_TARGET, which has no default
-sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET ./build.sh
+# SF_IMAGES_PUBLISH_TARGET, which has no default. A remote
+# user@host:path target also needs its ssh settings in RSYNC_RSH.
+sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH ./build.sh
 
 # Build a specific image without publishing it
 sudo ./build.sh --no-push "ubuntu:24.04"

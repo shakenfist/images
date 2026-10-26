@@ -229,3 +229,13 @@ night after that failed the same way.
 A failed repack shows in `{job="image-build"}` as `Working in
 /tmp/tmp.*` followed by the ENOSPC line, and in the run summary as that
 one image failing while the rest build.
+
+The CI workflow goes further and sets `DIB_NO_TMPFS=1`, so DIB builds
+on disk instead of in its per-image tmpfs. DIB mounts two of those, the
+chroot and the image, and lets each grow to half of RAM. On the build
+host's 31 GB that is plenty. On a CI VM's 8 GB, ubuntu:22.04 ran out of
+space writing its initramfs (`zstd: ... No space left on device`), and
+debian-gnome:12's VM died mid-build without a log, which is what the
+two mounts overrunning RAM looks like. The VM has 200 GB of disk and
+nothing else on it, so building on disk beats renting a bigger VM, where
+the pair would still be uncapped.

@@ -48,6 +48,6 @@ repos:
   # context to run skillsaw here and in CI. AGENTS.md is agent context,
   # so a malformed or secret-bearing edit to it is caught at commit.
   - repo: https://github.com/stbenjam/skillsaw
-    rev: v0.21.0
+    rev: v0.22.0
     hooks:
       - id: skillsaw

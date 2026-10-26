@@ -111,6 +111,13 @@ the address are not written here because this repository is public.
 If every image's publish fails, suspect the egress address having
 changed, which the account refuses, before suspecting the key.
 
+A job killed during its upload, by its timeout or by a lost VM, can
+leave rsync's temporary file in the label directory: a hidden
+`.<image>.qcow2.<random>`. Retention only ever deletes `*.qcow2` and
+`*.qcow2.log`, so nothing removes it. List hidden files in a label
+directory on sfyow after such a run, and delete any that no rsync is
+still writing.
+
 ## If the debian-13 runner label is broken
 
 The build runs on VMs booted from the `debian-13` label, which is

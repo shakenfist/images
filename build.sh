@@ -70,12 +70,6 @@ set -o errexit
 
 do_not_push=0
 
-# Kept before the flags below are consumed, because the self-update
-# re-executes this script and has to hand the new copy exactly what
-# this one was given. Restarting with the image list but without
-# --no-push would publish what the operator asked not to.
-original_args=("$@")
-
 # Flags come before the image list.
 #
 # --list-images prints the list this script would build and exits.
@@ -93,15 +87,6 @@ original_args=("$@")
 # images.shakenfist.com or prune old ones there. Without it, every run
 # publishes, including one somebody started by hand to try something.
 #
-# --no-self-update skips the fast-forward of this checkout below. That
-# update exists for a long-lived clone run by cron, and in a fresh CI
-# checkout it is wrong in both directions: a run started from a branch
-# would pull master over the branch it was asked to test, and a
-# dispatched run already has exactly the commit it should build. It is
-# a flag rather than a guess from the environment, such as noticing
-# GITHUB_ACTIONS, for the same reason the rest of this parser refuses
-# to guess: the run should do what it was told, and say so.
-#
 # Anything else that looks like a flag, and anything after the image
 # list, is refused rather than guessed at. A mistyped --no-push would
 # otherwise become the image list, and a --no-push written after the
@@ -109,7 +94,6 @@ original_args=("$@")
 # one thing the operator asked it not to do. The list is a single
 # argument, so several images have to be quoted together.
 list_images_only=0
-self_update=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --list-images)
@@ -120,13 +104,9 @@ while [ $# -gt 0 ]; do
             do_not_push=1
             shift
             ;;
-        --no-self-update)
-            self_update=0
-            shift
-            ;;
         -*)
             echo "Unknown flag: $1"
-            echo "Usage: $0 [--list-images] [--no-push] [--no-self-update] [\"image image ...\"]"
+            echo "Usage: $0 [--list-images] [--no-push] [\"image image ...\"]"
             exit 2
             ;;
         *)
@@ -163,8 +143,8 @@ fi
 # whichever machine it happens to be running on, and under sudo a
 # target is lost quietly unless it is named in --preserve-env. So a
 # run that will publish and has no target is refused here, with the
-# same exit status as a bad argument, before the self-update, the
-# preamble or any build. --no-push and --list-images need no target.
+# same exit status as a bad argument, before the preamble or any
+# build. --no-push and --list-images need no target.
 #
 # Nothing here knows about SSH. rsync reads RSYNC_RSH from the
 # environment by itself, so the key and the pinned host key belong to
@@ -201,84 +181,6 @@ fi
 
 echo "I will build the following images: ${images}"
 echo
-
-# Run the build.sh that is on master, not the one that happened to be
-# in this checkout when cron fired.
-#
-# Nothing updated this repository. cron runs
-# "cd /srv/sf-images/images; ./build.sh", and the only "git pull" in
-# this script is diskimage-builder's, a few lines below -- which made
-# the checkout look maintained while it was not. images#5, #6 and #7
-# all merged and then did not run: on the night of 2026-09-14 the
-# build was still assembling its element list without verify-release,
-# a day after that element landed, and nothing said so.
-#
-# Placed after the --list-images exit above so the watchdog, which
-# runs this script on a GitHub runner in a fresh checkout, never
-# triggers a pull. A build in a fresh checkout passes --no-self-update
-# for the same reason, and the run says it was skipped.
-#
-# The re-exec is not optional. bash reads a script lazily, by byte
-# offset, so replacing build.sh underneath a running build.sh makes it
-# resume at whatever text now happens to sit at that offset. The guard
-# variable stops the new copy pulling again and recursing.
-#
-# A failed pull warns and carries on rather than aborting. A checkout
-# that cannot fast-forward -- no network, a local edit, a diverged
-# branch -- is an operator problem, and building yesterday's images is
-# a much better answer to it than building none; the freshness
-# watchdog in tools/check-image-freshness.sh is what notices if this
-# goes on.
-#
-# Every git command here has to be inside the "if" condition, because
-# this script runs under errexit and an assignment from a command
-# substitution is a simple command: "before=$(git rev-parse HEAD)" on
-# a line of its own ends the run when git exits non-zero, before the
-# warning below can be reached.
-#
-# That is not hypothetical. On 2026-09-15 the nightly build stopped
-# dead at 05:00:01, having published nothing and said nothing:
-#
-#   fatal: detected dubious ownership in repository at
-#   '/srv/sf-images/images'
-#
-# The checkout on the build host belongs to a different user than the
-# root cron job that runs this script, so git refuses to touch it. The
-# "-d .git" guard did not help -- .git was there, and perfectly valid;
-# git declined on ownership rather than on the repository being
-# missing. cron had no MTA, so the output went nowhere.
-#
-# So the guard cannot be a test for one particular way of not being a
-# repository. Any git failure at all has to land in the else branch:
-# an unpacked copy with no .git, a checkout git will not open, a
-# missing origin, a diverged branch, no network.
-if [ "${SF_IMAGES_SELF_UPDATED:-0}" != "1" ] && [ "${self_update}" = 1 ] && [ -d .git ]; then
-    if before=$(git rev-parse HEAD) && git pull --ff-only origin master; then
-        after=$(git rev-parse HEAD)
-        if [ "${before}" != "${after}" ]; then
-            echo
-            echo "===================================================================="
-            echo "build.sh updated: ${before} -> ${after}. Restarting."
-            echo "===================================================================="
-            echo
-            export SF_IMAGES_SELF_UPDATED=1
-            exec "$0" "${original_args[@]}"
-        fi
-    else
-        echo
-        echo "===================================================================="
-        echo "WARNING: could not update this checkout from origin/master."
-        echo "Building with the code that is here, which may be older than"
-        echo "what has been merged. The git error is above; if it is about"
-        echo "dubious ownership, the checkout belongs to a different user"
-        echo "than the one running this script. Fix the checkout at $(pwd)."
-        echo "===================================================================="
-        echo
-    fi
-elif [ "${self_update}" = 0 ]; then
-    echo "Not updating this checkout: --no-self-update was given."
-    echo
-fi
 
 # Where build logs are shipped, read from the environment so the
 # destination is a property of the deployment rather than of the

@@ -42,7 +42,7 @@ jobs:
         if: always()
         run: rm -rf "${RUNNER_TEMP}/venv-lint"
 
-  # The shell suites in tools/ guard the self-update re-exec, release
+  # The shell suites in tools/ guard argument parsing, release
   # verification and the run summary. They take seconds and need only
   # bash, git and python3, so a static runner will do.
   unit-tests:

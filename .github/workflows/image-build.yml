@@ -140,10 +140,6 @@ jobs:
       # does not publish, and the Loki pair is empty off master; an
       # unset variable is simply not passed, and with no Loki URL
       # build.sh warns that it will ship nothing.
-      #
-      # --no-self-update because this checkout is already exactly the
-      # commit the run was asked to build; the update would pull master
-      # over a branch.
       - name: Build ${{ matrix.image }}
         env:
           IMAGE: ${{ matrix.image }}
@@ -154,9 +150,9 @@ jobs:
           if [ "${PUBLISH}" = "true" ]; then
             # Unset, build.sh would refuse; this says which secret is missing.
             [ -n "${SF_IMAGES_PUBLISH_TARGET:-}" ] || { echo 'Publishing, but SF_IMAGES_PUBLISH_TARGET is empty.' >&2; exit 2; }
-            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update "${IMAGE}"
+            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh "${IMAGE}"
           else
-            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update --no-push "${IMAGE}"
+            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-push "${IMAGE}"
           fi
 
       - name: Remove the publishing credentials

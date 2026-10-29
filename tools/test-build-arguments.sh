@@ -12,8 +12,8 @@
 #
 # The publish target check is exercised on the stretch of build.sh
 # that does it, extracted at run time like tools/test-run-summary.sh
-# does: running the whole script with a target would go on to update
-# the checkout and start a build.
+# does: running the whole script with a target would go on to run
+# the preamble and start a build.
 #
 # Runs anywhere, needs no build host and no root:
 #
@@ -75,16 +75,6 @@ check "a flag after the image list is refused" 2 - \
     --list-images debian:13 --no-push
 check "several unquoted images are refused" 2 - \
     --list-images debian:13 rocky:9
-# --no-self-update is what a CI checkout passes, beside --no-push when
-# it is not publishing, so it has to be accepted in any order among
-# the flags and refused after the list like the others.
-check "--no-self-update is taken" 0 "debian:13" \
-    --list-images --no-self-update debian:13
-check "--no-self-update in any order among the flags" 0 "debian:13 rocky:9" \
-    --no-self-update --no-push --list-images "debian:13 rocky:9"
-check "--no-self-update after the image list is refused" 2 - \
-    --list-images debian:13 --no-self-update
-
 # A publishing run with no target is refused before anything else
 # happens. The check is extracted from build.sh and run with
 # do_not_push set as the parser would have set it.
@@ -132,15 +122,15 @@ check_target "a target without a trailing slash gets one" 0 '/srv/www/site' 0 ''
 check_target "a bare host: is left alone" 0 'host:' 0 '' 'host:'
 check_target "a --no-push run keeps a target it was given" 1 'user@host:path' 0 '' 'user@host:path/'
 
-# Refused before the self-update and the build, and --no-push or
-# --list-images still run with no target. --list-images is the only
-# one that can be run whole here.
+# Refused before the build, and --no-push or --list-images still run
+# with no target. --list-images is the only one that can be run whole
+# here.
 check "--list-images needs no target" 0 "debian:13" \
     --list-images debian:13
 
 # The refusal has to come before anything that changes the machine.
 # The whole script runs here, publishing with no target, from a copy
-# outside any git checkout. Refused in the right place, it exits 2
+# in a temporary directory. Refused in the right place, it exits 2
 # with the message before saying what it will build. Moved below the
 # preamble, it would try to install packages instead, so this runs
 # only as a user who cannot, and under a timeout.
@@ -150,7 +140,7 @@ else
     mkdir "${WORK}/whole"
     cp "${BUILD}" "${WORK}/whole/build.sh"
     got=0
-    (cd "${WORK}/whole" && timeout 60 ./build.sh --no-self-update debian:13) \
+    (cd "${WORK}/whole" && timeout 60 ./build.sh debian:13) \
         > "${WORK}/whole.out" 2>&1 || got=$?
     if [ "${got}" -eq 2 ] \
             && grep -qF 'SF_IMAGES_PUBLISH_TARGET is not set' "${WORK}/whole.out" \

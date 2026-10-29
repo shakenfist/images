@@ -314,9 +314,10 @@ PYEOF
 # typed by hand ("debian" rather than "debian:13") reports as not
 # attempted. The default list is exact.
 #
-# The summary itself is shipped to Loki as well as printed. cron runs
-# this on a host with no MTA, so stdout goes nowhere, and the summary
-# is the only place the run says what it did not do.
+# The summary itself is shipped to Loki as well as printed. Nobody
+# watches a nightly job's log, and it expires; the summary in Loki is
+# what the image-build-summary-stale alert reads, and the lasting
+# record of what the run did not do.
 function finish_run() {
     # $1: why the run stopped before its end; empty if it did not
     # $2: optional log of what was running when it stopped
@@ -1160,10 +1161,9 @@ fi
 finish_run
 run_finished=1
 
-# The run's exit status. Cron mail and any future workflow both key
-# off this, so it has to survive the per-image isolation above: one
-# image failing no longer stops the others, but it still fails the
-# run.
+# The run's exit status. The workflow's job result keys off this, so
+# it has to survive the per-image isolation above: one image failing
+# no longer stops the others, but it still fails the run.
 if [ "${run_result}" = "failure" ]; then
     echo "Complete, with failures."
     exit 1

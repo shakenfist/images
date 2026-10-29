@@ -239,7 +239,9 @@ environment. #22's rule is that `build.sh` refuses to guess, and this is
 a guess. The flag is how the cron and the workflow can both run the
 script during the transition. Once the cron is gone (step 2f, after the
 soak), nothing pulls, and the self-update block, the flag and
-`tools/test-self-update.sh` are deleted together.
+`tools/test-self-update.sh` are deleted together. They were, on
+2026-10-30; commands quoted elsewhere in this plan with the flag are
+history, and `build.sh` now refuses it as an unknown flag.
 
 **D7. The matrix comes from `build.sh --list-images`.** A first job on
 `[self-hosted, static]` turns the list into JSON. It is small and

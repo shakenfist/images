@@ -3,8 +3,8 @@
 # Exercise the end of run summary in build.sh, and check that it
 # reaches Loki rather than only stdout.
 #
-# The nightly build runs from cron on a host with no MTA, so anything
-# that is only printed is discarded. The summary is the one place the
+# Nobody watches a nightly job's log, and it expires, so anything that
+# is only printed is effectively lost. The summary is the one place the
 # run says which images it never attempted, so it has to be shipped.
 #
 # The run bookkeeping (push_log_to_loki, finish_run and the exit trap),

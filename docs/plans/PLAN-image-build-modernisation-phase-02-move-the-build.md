@@ -239,7 +239,9 @@ environment. #22's rule is that `build.sh` refuses to guess, and this is
 a guess. The flag is how the cron and the workflow can both run the
 script during the transition. Once the cron is gone (step 2f, after the
 soak), nothing pulls, and the self-update block, the flag and
-`tools/test-self-update.sh` are deleted together.
+`tools/test-self-update.sh` are deleted together. They were, on
+2026-10-30; commands quoted elsewhere in this plan with the flag are
+history, and `build.sh` now refuses it as an unknown flag.
 
 **D7. The matrix comes from `build.sh --list-images`.** A first job on
 `[self-hosted, static]` turns the list into JSON. It is small and
@@ -396,32 +398,32 @@ changing it is one edit.
 
 Each item can be checked by running something:
 
-- [ ] `tools/run-tests.sh` passes, including `tools/test-publish.sh`.
+- [x] `tools/run-tests.sh` passes, including `tools/test-publish.sh`.
   Each of its retention-refusal cases was shown failing with its guard
   removed, and the 2a commit message says so.
-- [ ] `grep -nE '^\s+(pull_request|pull_request_target|push):'
+- [x] `grep -nE '^\s+(pull_request|pull_request_target|push):'
   .github/workflows/image-build.yml` prints nothing.
-- [ ] `grep -n 'debian-13' .github/workflows/image-build.yml` shows the
+- [x] `grep -n 'debian-13' .github/workflows/image-build.yml` shows the
   `runs-on` line, with the comment saying it is the builder OS.
-- [ ] `gh api repos/shakenfist/images/environments/images-publish
+- [x] `gh api repos/shakenfist/images/environments/images-publish
   --jq .deployment_branch_policy` shows custom branch policies, and
   `gh api repos/shakenfist/images/environments/images-publish/deployment-branch-policies
   --jq '.branch_policies[].name'` prints only `master`.
-- [ ] `git grep -nE 'home\.stillhq|192\.168\.|BEGIN OPENSSH' -- ':!docs/plans'`
+- [x] `git grep -nE 'home\.stillhq|192\.168\.|BEGIN OPENSSH' -- ':!docs/plans'`
   prints nothing. The plans are excluded because this line matches
   itself; read the plan diff by eye instead.
-- [ ] A conductor-dispatched nightly run of `image-build.yml`, with
+- [x] A conductor-dispatched nightly run of `image-build.yml`, with
   `publish: true` and an empty image list, built and published every
   image in `build.sh --list-images`. Its URL is under
   *Results*, and `tools/check-image-freshness.sh` exits 0 the following
   day.
-- [ ] `ssh sfyow sudo crontab -l -u root | grep -c build.sh` prints `0`.
-- [ ] The D8 rule exists in 33fl's
+- [x] `ssh sfyow sudo crontab -l -u root | grep -c build.sh` prints `0`.
+- [x] The D8 rule exists in 33fl's
   `config/maui/grafana/alerting/rules.yml` and its expression returns
   a non-zero count today.
-- [ ] `grep -ci cron AGENTS.md` prints `0`, and `docs/build-host.md` no
+- [x] `grep -ci cron AGENTS.md` prints `0`, and `docs/build-host.md` no
   longer exists.
-- [ ] After 2f, `grep -n 'self-update\|SF_IMAGES_SELF_UPDATED' build.sh`
+- [x] After 2f, `grep -n 'self-update\|SF_IMAGES_SELF_UPDATED' build.sh`
   prints nothing.
 
 ## Execution notes
@@ -581,6 +583,32 @@ became three pull requests instead of two. A side benefit is the time:
 01:30 Canberra is outside working hours, where sfyow's 05:00 UTC cron
 landed in the middle of the Australian afternoon.
 
+**2026-10-30 (AEDT): 2e's checks, and 2f.** All three conductor
+nightlies were clean (see *Results*), so 2f ran. Each Definition of
+done item was checked by running its command: the crontab check on
+2026-10-26 at 22:02 UTC, the rest on 2026-10-29 UTC. Departures from
+the 2f brief:
+
+* **The operator chose to delete all of `/srv/sf-images`** on sfyow
+  (about 31 GB: a 28 GB DIB cache, the 2.2 GB checkout and 746 MB of
+  old output), not only `output` and `cache`. 33fl removes it with
+  `state: absent`, so no later deploy can bring it back.
+* **33fl's reason for keeping the checkout was false.** Its comment
+  said `tools/check-image-freshness.sh` reads the image list through
+  the checkout on sfyow. The freshness check runs in GitHub Actions
+  against its own checkout, and nothing on sfyow runs it. The comment
+  went with the checkout.
+* **The removal refuses while anything is mounted under the tree.**
+  `file: state: absent` deletes recursively and does not stop at a
+  mount point, and DIB bind-mounts `/dev`, `/proc` and `/sys` into its
+  chroots under `/srv/sf-images`. Nothing was mounted there on
+  2026-10-29.
+* **33fl's backup coverage declaration named the tree too:**
+  `/srv/sf-images/images` was backed up and `/srv/sf-images/cache`
+  excluded. Both entries are removed.
+* **`build.sh`'s `original_args` went too.** It existed only to hand
+  the re-exec the same arguments.
+
 ## Results
 
 **2d step (1), first attempt** (run 40238608134, 2026-10-25 UTC, `m`
@@ -682,6 +710,65 @@ images built, and all 14 summaries reached Loki. Time per job:
   and no queue, the same builds take about half an hour. 2e should
   expect a scheduled nightly to take hours on a busy day, and should
   not assume it finishes by any particular time.
+
+**2e: the first three conductor-dispatched nightlies were clean.** Each
+was dispatched on `master` with `publish: true` and no image list, and
+each built and published all 14 images:
+
+| Night (UTC) | Run | Dispatched | Finished | Wall-clock |
+|---|---|---|---|---|
+| 2026-10-27 | 40521732555 | 14:30:20 | 15:37:43 | 67 min |
+| 2026-10-28 | 40706569015 | 14:30:16 | 15:35:38 | 65 min |
+| 2026-10-29 | 40892111356 | 14:30:13 | 15:37:38 | 67 min |
+
+* Every night, 14 summaries reached Loki, each with `Built:` and none
+  with `Failed:`, `Not attempted:` or `Stopped:`. That satisfies the
+  D8 rule's expression.
+* Every night, 14 new dated images and their logs appeared on sfyow,
+  owned by `sf-images-publish`, with no `.<image>.qcow2.<random>` temp
+  file left behind.
+* `image-freshness.yml` exited 0 on 2026-10-28 and 2026-10-29. Its
+  `schedule` fired at about 15:55 UTC both days, nearly seven hours
+  after its 09:00 cron, which is the lateness D2 describes.
+* Root's crontab on sfyow held no `build.sh` line from 2026-10-26
+  22:02 UTC onwards.
+* The runners were idle at 14:30 UTC each night, so the four-wide
+  matrix ran without queueing, unlike 2d's 6h39m re-run.
+
+Per job, in minutes: the time to the upload's start (which includes
+the job's package installs), the upload itself, and the whole job, with
+the upload's rate in MB/s. The rate is rsync's own `bytes/sec` figure.
+
+| Image | GB | 2026-10-27 | 2026-10-28 | 2026-10-29 |
+|---|---|---|---|---|
+| rocky:8 | 1.93 | 9 / 18.4 / 28 @1.7 | 9 / 19.4 / 28 @1.7 | 9 / 17.7 / 28 @1.8 |
+| rocky:9 | 1.60 | 5 / 16.6 / 22 @1.6 | 5 / 15.6 / 21 @1.7 | 6 / 14.8 / 21 @1.8 |
+| debian-gnome:13 | 1.45 | 11 / 15.6 / 27 @1.6 | 13 / 16.2 / 30 @1.5 | 11 / 12.2 / 24 @2.0 |
+| ubuntu:24.04 | 1.44 | 9 / 12.0 / 21 @2.0 | 8 / 12.5 / 21 @1.9 | 9 / 8.8 / 18 @2.7 |
+| debian-gnome:12 | 1.43 | 14 / 10.2 / 24 @2.3 | 13 / 7.0 / 20 @3.4 | 14 / 10.0 / 24 @2.4 |
+| centos:9-stream | 1.39 | 4 / 8.4 / 13 @2.8 | 4 / 10.1 / 15 @2.3 | 3 / 7.2 / 11 @3.2 |
+| rocky:10 | 1.07 | 6 / 8.6 / 15 @2.1 | 6 / 7.6 / 14 @2.4 | 4 / 6.6 / 11 @2.7 |
+| ubuntu:22.04 | 0.81 | 10 / 8.6 / 19 @1.6 | 9 / 8.7 / 18 @1.6 | 11 / 5.3 / 16 @2.5 |
+| debian-xfce:13 | 0.79 | 7 / 6.2 / 14 @2.1 | 8 / 7.1 / 16 @1.8 | 8 / 8.6 / 17 @1.5 |
+| debian-xfce:12 | 0.78 | 7 / 7.2 / 14 @1.8 | 7 / 5.9 / 13 @2.2 | 9 / 8.0 / 17 @1.6 |
+| debian-docker:12 | 0.60 | 6 / 4.7 / 11 @2.1 | 7 / 4.9 / 12 @2.0 | 7 / 4.0 / 11 @2.5 |
+| debian-docker:13 | 0.56 | 6 / 5.9 / 12 @1.6 | 5 / 5.4 / 11 @1.7 | 6 / 5.1 / 12 @1.8 |
+| debian:12 | 0.50 | 6 / 3.0 / 10 @2.8 | 4 / 3.1 / 8 @2.7 | 6 / 3.6 / 10 @2.3 |
+| debian:13 | 0.44 | 5 / 5.7 / 11 @1.3 | 4 / 3.2 / 8 @2.3 | 6 / 3.6 / 10 @2.1 |
+
+* **The parallel uploads partly share the link.** Each upload ran at
+  1.3 to 3.4 MB/s, against the 4.3 MB/s that 2d step (3)'s single
+  upload measured, so four at once move about 8 MB/s between them. 2d
+  could not tell "shared" from "each at full rate"; the answer is
+  in between.
+* **The timeout stays at 60 minutes.** The longest job in three nights
+  was debian-gnome:13's 30 minutes, and the longest upload rocky:8's
+  19.4. That is the slowest build plus the slowest upload, with about
+  double the margin, which is the rule 2d settled on. Lowering it
+  would buy nothing: a job that hangs is caught either way, and a
+  slower night on a busier link would be cut off.
+* Each night published about 14.8 GB, the same as 2d's estimate from
+  the site.
 
 ## Back brief
 

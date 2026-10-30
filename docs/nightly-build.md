@@ -171,12 +171,6 @@ sudo --preserve-env=SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT \
   dependencies. `tools/check-image-freshness.sh` reads the list that
   way.
 
-`build.sh` still carries a self-update, which fast-forwards the
-checkout it runs from and restarts, and a `--no-self-update` flag that
-turns it off. The workflow passes the flag because its checkout is
-already the commit it was asked to build. The self-update has no job
-left to do and a follow-up removes both.
-
 ## Checking whether a change is live
 
 See the log beside the image, above: the element list is printed at the

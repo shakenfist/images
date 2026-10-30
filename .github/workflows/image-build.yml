@@ -87,13 +87,13 @@ jobs:
     runs-on: [self-hosted, vm, debian-13, m]
     # The job includes the upload on a publishing run, so this is the
     # slowest build plus the slowest upload, with margin. Every build
-    # here is cold-cache on a fresh VM, and on 2026-10-26 the slowest,
-    # debian-gnome:13, took 14.7 minutes on disk. One upload to sfyow ran
-    # at about 4.3 MB/s; if four parallel uploads share that, rocky:8's
-    # 1.9 GB takes about 30 minutes. 60 minutes covers both, and still
-    # stops a hung build from holding a VM the rest of the fleet's CI
-    # needs for six hours. Raise it with a new measurement if an image
-    # grows past it.
+    # here is cold-cache on a fresh VM. Over the first three publishing
+    # nightlies (2026-10-27 to 29) the longest job was debian-gnome:13
+    # at 30 minutes, and the longest upload rocky:8's 1.9 GB at 19
+    # minutes, the four parallel uploads getting about 2 MB/s each.
+    # 60 minutes is about double that, and still stops a hung build
+    # from holding a VM the rest of the fleet's CI needs for six hours.
+    # Raise it with a new measurement if an image grows past it.
     timeout-minutes: 60
     # The publishing credential and the Loki settings are secrets in the
     # images-publish environment, which only master may deploy from.
@@ -140,10 +140,6 @@ jobs:
       # does not publish, and the Loki pair is empty off master; an
       # unset variable is simply not passed, and with no Loki URL
       # build.sh warns that it will ship nothing.
-      #
-      # --no-self-update because this checkout is already exactly the
-      # commit the run was asked to build; the update would pull master
-      # over a branch.
       - name: Build ${{ matrix.image }}
         env:
           IMAGE: ${{ matrix.image }}
@@ -154,9 +150,9 @@ jobs:
           if [ "${PUBLISH}" = "true" ]; then
             # Unset, build.sh would refuse; this says which secret is missing.
             [ -n "${SF_IMAGES_PUBLISH_TARGET:-}" ] || { echo 'Publishing, but SF_IMAGES_PUBLISH_TARGET is empty.' >&2; exit 2; }
-            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update "${IMAGE}"
+            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh "${IMAGE}"
           else
-            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-self-update --no-push "${IMAGE}"
+            sudo --preserve-env=SF_IMAGES_PUBLISH_TARGET,RSYNC_RSH,SF_IMAGES_LOKI_URL,SF_IMAGES_LOKI_TENANT ./build.sh --no-push "${IMAGE}"
           fi
 
       - name: Remove the publishing credentials

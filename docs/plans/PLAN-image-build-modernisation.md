@@ -658,6 +658,32 @@ start appearing in the tracker:
   since the alternative -- filing from inside each matrix leg -- is
   the obvious design and this plan deliberately rejects it.
 
+#### Execution notes
+
+**2026-11-04 (AEDT), back brief and implementation.** The operator
+agreed the design (D1's reconcile-from-a-follow-on-job shape and
+D4's master-plus-publish gate), pre-authorised pushing and opening
+PR C, and deferred 3d. 3a, 3b and 3c each ran as a sub-agent and
+were reviewed and committed by the management session, in sequence
+because all three write the one worktree.
+
+* **3d cannot run until PR C is on `master`.** The reporting job's
+  gate is `github.ref == 'refs/heads/master' && inputs.publish`, so
+  a dispatch from the branch skips the job entirely. The live
+  end-to-end check -- a `master` dispatch of `debian:13 nosuch:image`
+  with `publish: true`, confirming one `build-failure:nosuch:image`
+  issue appears and debian:13 files none -- waits until after the
+  pull request merges. The operator will be asked again before it
+  runs.
+* **3b dropped the `--paginate` the step-table brief named.** The
+  reconcile tool reads the jobs file as a single JSON document, and
+  `gh api --paginate` concatenates one JSON object per page, which
+  `json.load` cannot parse past the first. A nightly has about
+  sixteen jobs, well under the API's default page size, so one
+  unpaginated page holds them all. A run that ever exceeds a page
+  would need the tool to merge pages instead; a missing conclusion
+  already fails safe toward filing.
+
 ### Phase 4. Freshness watchdog
 
 Status: Complete

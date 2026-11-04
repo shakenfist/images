@@ -684,6 +684,32 @@ because all three write the one worktree.
   would need the tool to merge pages instead; a missing conclusion
   already fails safe toward filing.
 
+**2026-11-04 (AEDT), review rounds on PR C (shakenfist/images#40).**
+Two automated rounds. Round one raised two fix items, both taken: the
+reconcile stage swallowed a bad jobs file silently (python ran in a
+process substitution errexit could not see), and the jobs fetch relied
+on the API's default page size. Round two raised none. Decisions the
+review changed, recorded here because they depart from the step briefs:
+
+* **The reporting job carries `!cancelled()` as well as the gate D4
+  names.** D4 and the 3b brief specify
+  `always() && github.ref == 'refs/heads/master' && inputs.publish`.
+  Without `!cancelled()`, cancelling a nightly part way leaves most
+  legs `cancelled` or absent, which reconcile reads as failures, so one
+  operator cancel would file an issue per unfinished image. The
+  died-runner case D1 exists to catch ends as `failure`, not
+  `cancelled`, so excluding cancelled runs does not weaken it. The
+  trade-off taken: a cancelled run reports nothing at all, neither
+  filing for a leg that genuinely failed before the cancel nor closing
+  for one that had already succeeded.
+* **The jobs fetch asks for `per_page=100` and the tool detects
+  truncation.** Rather than leave the single-page assumption to a
+  comment, the fetch names a ceiling of about ninety more images than
+  the current list, and the reconcile tool exits non-zero if the
+  response's `total_count` exceeds the jobs it returned, so a run that
+  ever outgrows the page fails loud instead of filing against every
+  image that fell off it.
+
 ### Phase 4. Freshness watchdog
 
 Status: Complete

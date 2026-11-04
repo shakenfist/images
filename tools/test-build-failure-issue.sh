@@ -36,7 +36,12 @@ failed=0
 mkdir -p "${WORK}/bin"
 cat > "${WORK}/bin/gh" << 'EOF'
 #!/bin/bash
-case "$1 $2" in
+# Save the subcommand and the full argument line before the issue-list
+# branch shifts the positional parameters away, so the failure hooks
+# below still see what was called.
+sub="$1 $2"
+all="$*"
+case "${sub}" in
     "issue list")
         label=""
         while [ $# -gt 0 ]; do
@@ -53,7 +58,10 @@ case "$1 $2" in
         printf '%s\n' "$@" >> "${GH_RECORD}"
         ;;
 esac
-if [ -n "${GH_FAIL_MATCH:-}" ] && [[ "$*" == *"${GH_FAIL_MATCH}"* ]]; then
+if [ -n "${GH_FAIL_LIST:-}" ] && [ "${sub}" = "issue list" ]; then
+    exit 1
+fi
+if [ -n "${GH_FAIL_MATCH:-}" ] && [[ "${all}" == *"${GH_FAIL_MATCH}"* ]]; then
     exit 1
 fi
 exit 0
@@ -136,10 +144,13 @@ got=$(run file debian:13 https://example/run)
 check "file forces the per-image label create" 0 "${got}" "--force"
 record_has "the label create names the image" "The debian:13 image is failing to build"
 
-# file comments when the image already has an open issue.
+# file comments when the image already has an open issue, and does not
+# file a second one -- the title text is unique to the create path, so
+# its absence is what proves one issue per outage rather than seven.
 got=$(OPEN_LABEL="build-failure:debian:13" OPEN_ISSUE=42 \
     run file debian:13 https://example/run)
 check "file comments when one is open" 0 "${got}" "comment"
+record_lacks "file does not open a second issue" "debian:13 is failing to build"
 
 # resolve closes the open issue for that image.
 got=$(OPEN_LABEL="build-failure:debian:13" OPEN_ISSUE=42 \
@@ -243,6 +254,43 @@ else
 fi
 record_has "the image after a gh failure is still processed" \
     "second:img is failing to build"
+
+# A truncated jobs page -- more jobs than this page returned -- fails
+# loudly rather than filing an issue for every image that fell off it.
+cat > "${WORK}/truncated-page.json" << 'EOF'
+{
+  "total_count": 200,
+  "jobs": [
+    {"name": "Build debian:13", "conclusion": "success"}
+  ]
+}
+EOF
+got=$(run reconcile '["debian:13"]' "${WORK}/truncated-page.json" https://example/run)
+check "a truncated jobs page fails loudly" 2 "${got}" -
+
+# A failed "issue list" is not read as "nothing open": reconcile does
+# not file a duplicate, and the run exits non-zero. The image has an
+# open issue, so a silent misread would comment; a wrong read as empty
+# would create a second one.
+cat > "${WORK}/one-failed.json" << 'EOF'
+{
+  "total_count": 1,
+  "jobs": [
+    {"name": "Build dup:img", "conclusion": "failure"}
+  ]
+}
+EOF
+got=$(OPEN_LABEL="build-failure:dup:img" OPEN_ISSUE=7 GH_FAIL_LIST=1 \
+    run reconcile '["dup:img"]' "${WORK}/one-failed.json" https://example/run)
+if [ "${got}" = 0 ]; then
+    echo "FAIL: a failed issue list makes reconcile exit non-zero: got exit 0"
+    sed 's/^/    /' "${WORK}/out" 2>/dev/null || true
+    failed=$((failed + 1))
+else
+    echo "PASS: a failed issue list makes reconcile exit non-zero"
+    passed=$((passed + 1))
+fi
+record_lacks "a failed issue list files no duplicate" "dup:img is failing to build"
 
 echo
 echo "${passed} passed, ${failed} failed"

@@ -115,7 +115,9 @@ The issue closes itself only for an image the nightly still builds. One
 dropped from `build.sh`'s default list, or dispatched by hand under a
 name the nightly never builds, keeps its issue open, because nothing
 reconciles an image the run was not asked for. Close it by hand, or run
-`tools/build-failure-issue.sh resolve <image> <run-url>`.
+`tools/build-failure-issue.sh resolve <image> <run-url>` with `GH_TOKEN`
+set to a token that can write issues here; the run URL is only used as
+the closing comment's text, so for a hand close any URL, or a note, does.
 
 It also reports an image whose build never finished, such as one whose
 runner vanished mid-build. The report compares the images the run was

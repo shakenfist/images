@@ -88,8 +88,17 @@ do_file() {
             "again."
     )
 
+    # Check whether an issue is already open before filing, but tell a
+    # failed check apart from "nothing open": under reconcile this runs
+    # with errexit disabled (the call site is the left of a ||), so a
+    # transient issue-list error would otherwise read as no open issue
+    # and file a duplicate. A failed check returns non-zero so the image
+    # is skipped and the run goes red instead.
     local existing
-    existing=$(open_issue "${label}")
+    if ! existing=$(open_issue "${label}"); then
+        echo "Could not check for an open issue for ${image}." >&2
+        return 1
+    fi
     if [ -n "${existing}" ]; then
         echo "Commenting on existing issue #${existing} for ${image}."
         gh issue comment "${existing}" --repo "${repo}" --body "${body}"
@@ -106,8 +115,13 @@ do_resolve() {
     local image="$1" run_url="$2"
     local label="build-failure:${image}"
 
+    # As in do_file, a failed check is not "nothing open": return
+    # non-zero so a transient error does not pass silently for success.
     local existing
-    existing=$(open_issue "${label}")
+    if ! existing=$(open_issue "${label}"); then
+        echo "Could not check for an open issue for ${image}." >&2
+        return 1
+    fi
     if [ -z "${existing}" ]; then
         echo "No open build-failure issue for ${image} to resolve."
         return 0
@@ -176,8 +190,16 @@ except ValueError:
 if not isinstance(run, dict):
     sys.exit(2)
 
+jobs = run.get('jobs', [])
+total = run.get('total_count')
+if total is not None and total > len(jobs):
+    # The response was truncated: more jobs exist than this page
+    # returned, so every image past the page would look absent and be
+    # filed against. Fail loud rather than file a wave of false issues.
+    sys.exit(2)
+
 conclusions = {}
-for job in run.get('jobs', []):
+for job in jobs:
     conclusions[job.get('name')] = job.get('conclusion')
 
 for image in images:

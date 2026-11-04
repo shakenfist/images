@@ -162,17 +162,19 @@ jobs:
   report-build-failures:
     name: Report images that failed to build
     needs: [list, build]
-    # always() so this still runs when a build leg failed -- a failed
-    # leg is exactly what it is here to report -- but !cancelled() so a
-    # whole-run cancel reports nothing: cancelling part way leaves most
-    # legs cancelled or absent, which reconcile reads as failures, and
-    # one deliberate cancel should not file fourteen issues. A died
-    # runner, the case this job exists to catch, ends as failure not
-    # cancelled, so it is still reported. The ref and publish gate
-    # matches publishing: only the real nightly on master files issues,
-    # so a branch dispatch or a publish-off test run that fails images on
-    # purpose neither opens production issues nor closes real ones.
-    if: always() && !cancelled() && github.ref == 'refs/heads/master' && inputs.publish
+    # !cancelled() runs this when a build leg failed -- a failed leg is
+    # exactly what it is here to report -- while a whole-run cancel
+    # reports nothing: cancelling part way leaves most legs cancelled or
+    # absent, which reconcile reads as failures, and one deliberate
+    # cancel should not file fourteen issues. A died runner, the case
+    # this job exists to catch, ends as failure not cancelled, so it is
+    # still reported. (!cancelled() alone overrides the default that
+    # needs succeeded, so no always() is needed.) The ref and publish
+    # gate matches publishing: only the real nightly on master files
+    # issues, so a branch dispatch or a publish-off test run that fails
+    # images on purpose neither opens production issues nor closes real
+    # ones.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/master' && inputs.publish }}
     # Runs on a hosted runner, off the fleet's VMs: it runs no build code
     # and needs no fleet secret, only the automatic token, gh and
     # api.github.com. This repository is public, so the minutes are free.

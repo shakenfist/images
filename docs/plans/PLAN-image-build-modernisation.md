@@ -705,10 +705,14 @@ review changed, recorded here because they depart from the step briefs:
 * **The jobs fetch asks for `per_page=100` and the tool detects
   truncation.** Rather than leave the single-page assumption to a
   comment, the fetch names a ceiling of about ninety more images than
-  the current list, and the reconcile tool exits non-zero if the
-  response's `total_count` exceeds the jobs it returned, so a run that
-  ever outgrows the page fails loud instead of filing against every
-  image that fell off it.
+  the current list, and the reconcile tool exits non-zero when the page
+  comes back full (100 jobs), so a run that ever outgrows the page fails
+  loud instead of filing against every image that fell off it. A third
+  review round asked whether this could misfire: an earlier form
+  compared the response's `total_count` against the jobs returned, and
+  `total_count` can exceed the latest-attempt jobs after a partial
+  re-run. Counting the jobs on the page instead cannot misfire that
+  way, because a re-run does not grow the page.
 
 ### Phase 4. Freshness watchdog
 

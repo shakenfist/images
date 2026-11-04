@@ -109,7 +109,10 @@ when the image next builds. To find the cause, follow the Actions run
 and the `.qcow2.log` named in [Where the logs are](#where-the-logs-are).
 
 This happens only on the real nightly: `master` with `publish` on. A
-dispatch from a branch, or with `publish` off, files nothing.
+dispatch from a branch, or with `publish` off, files nothing. A
+cancelled run also reports nothing at all: it does not file for a leg
+that failed before the cancel, nor close one that had already
+succeeded, so a cancel leaves the tracker as it was.
 
 The issue closes itself only for an image the nightly still builds. One
 dropped from `build.sh`'s default list, or dispatched by hand under a

@@ -255,18 +255,29 @@ fi
 record_has "the image after a gh failure is still processed" \
     "second:img is failing to build"
 
-# A truncated jobs page -- more jobs than this page returned -- fails
-# loudly rather than filing an issue for every image that fell off it.
-cat > "${WORK}/truncated-page.json" << 'EOF'
+# A full jobs page -- as many jobs as the fetch's per_page -- may have
+# dropped others onto a page the fetch never saw, so it fails loudly
+# rather than filing an issue for every image that fell off it.
+python3 -I -c "import json; print(json.dumps({'jobs': [{'name': 'Build i%d:img' % n, 'conclusion': 'success'} for n in range(100)]}))" \
+    > "${WORK}/full-page.json"
+full_images=$(python3 -I -c "import json; print(json.dumps(['i%d:img' % n for n in range(100)]))")
+got=$(run reconcile "${full_images}" "${WORK}/full-page.json" https://example/run)
+check "a full jobs page fails loudly" 2 "${got}" -
+
+# A partial re-run can inflate the API's total_count above the
+# latest-attempt jobs; the guard counts the jobs on the page, not
+# total_count, so a short page reconciles normally rather than misfiring.
+cat > "${WORK}/rerun.json" << 'EOF'
 {
-  "total_count": 200,
+  "total_count": 99,
   "jobs": [
     {"name": "Build debian:13", "conclusion": "success"}
   ]
 }
 EOF
-got=$(run reconcile '["debian:13"]' "${WORK}/truncated-page.json" https://example/run)
-check "a truncated jobs page fails loudly" 2 "${got}" -
+got=$(OPEN_LABEL="build-failure:debian:13" OPEN_ISSUE=5 \
+    run reconcile '["debian:13"]' "${WORK}/rerun.json" https://example/run)
+check "an inflated total_count does not misfire" 0 "${got}" "close"
 
 # A failed "issue list" is not read as "nothing open": reconcile does
 # not file a duplicate, and the run exits non-zero. The image has an

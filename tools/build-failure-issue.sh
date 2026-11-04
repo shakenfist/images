@@ -191,11 +191,13 @@ if not isinstance(run, dict):
     sys.exit(2)
 
 jobs = run.get('jobs', [])
-total = run.get('total_count')
-if total is not None and total > len(jobs):
-    # The response was truncated: more jobs exist than this page
-    # returned, so every image past the page would look absent and be
-    # filed against. Fail loud rather than file a wave of false issues.
+if len(jobs) >= 100:
+    # A full page may have dropped jobs onto a page this did not fetch,
+    # so every image past it would look absent and be filed against:
+    # fail loud instead. This counts the jobs returned rather than the
+    # response's total_count, which can exceed the latest-attempt jobs
+    # after a partial re-run and would misfire then. 100 is the fetch's
+    # per_page; the two must stay in step.
     sys.exit(2)
 
 conclusions = {}

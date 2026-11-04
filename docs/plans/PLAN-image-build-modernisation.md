@@ -904,6 +904,12 @@ so it is safe to run before merge.
 * **Widening `REPO_OVERRIDES['images']` beyond `eol-distro`.** This is
   shakenfist/development's decision 6.5 to revisit, external to this
   repository; nothing here can settle it.
+* **The executable hooks under `elements/`.** The shellcheck hook is
+  scoped to `tools/` and `build.sh` (D2); the DIB element hooks under
+  `elements/` are not linted. They are element data run inside the
+  build chroot with their own conventions, so bringing them under the
+  hook is a separate piece of work, left out deliberately rather than
+  missed.
 * The `AGENTS.md` "manually or via cron" item moved to Phase 2's
   cutover and is done.
 

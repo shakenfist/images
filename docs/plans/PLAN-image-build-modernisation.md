@@ -962,6 +962,39 @@ Before executing, back brief the operator:
 * that 5b is a `publish: false` branch dispatch of `debian:13 rocky:9`,
   and confirm those two are the right representative pair.
 
+#### Execution notes
+
+**2026-11-05 (AEDT), back brief and implementation.** The operator
+confirmed the design (D1 suppress-with-reason, D2 the hook scoped to
+`tools/` and `build.sh`, D3 a real build), chose `debian:13` and
+`rocky:9` as the 5b pair, and pre-authorised pushing and opening PR D.
+5a ran as one opus sub-agent at high effort; the management session
+reviewed and committed it.
+
+* **5a cleared 119 findings** (`d57a220`): 113 quoted, three suppressed
+  with a per-line reason at two sites (the bindep package list and the
+  disk-image-create element lists), and the three one-offs fixed
+  (backtick to `$(...)`, `egrep` to `grep -E`, and a split export so a
+  return value is not masked). The shellcheck hook's `files:` now
+  matches `tools/` and `build.sh`, and no `elements/` path.
+* **Review caught a regression the static checks could not.** The
+  sub-agent had quoted `${output}` but dropped the separating space in
+  all 34 `build ${output} <release>` dispatch sites, so
+  `build "${output}"<release>` glued the release onto the output path
+  and shifted every argument to `build`. shellcheck, `bash -n` and
+  `tools/run-tests.sh` all passed regardless, because none exercises
+  those call sites. The management session restored the spaces and
+  confirmed the build-call lines now differ from the original by the
+  added quotes alone. The sub-agent's report had called the change
+  behaviour-free; it was not until this fix.
+* **5b built two images for real.** A `publish: false` dispatch on the
+  phase branch of `debian:13 rocky:9`
+  ([run 41894362962](https://github.com/shakenfist/images/actions/runs/41894362962))
+  finished `success`: both `Build debian:13` and `Build rocky:9`
+  succeeded, and `report-build-failures` skipped (branch, not master,
+  and publish off). A glued argument would have failed the debian:13
+  leg, so this is the behavioural proof the lint checks cannot give.
+
 ### Phase 6. Push audit
 
 Status: In progress

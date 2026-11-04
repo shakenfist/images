@@ -279,7 +279,7 @@ for this repository allows.
 | 0. Planning foundation | 39303ef (#3) | Complete |
 | 1. One failure stops one image | 47ed141 (#6), 3423343 (#12) | Complete |
 | 2. Move the build mechanism ([phase file](PLAN-image-build-modernisation-phase-02-move-the-build.md)) | da7683b (#23), 65deaf6 (#27), 76d080a (#34) | Complete |
-| 3. Failure files an issue | | Not started |
+| 3. Failure files an issue | | In progress |
 | 4. Freshness watchdog | acccd2b (#5) | Complete |
 | 5. Repository standards | a75db0b (#20) | In progress |
 | 6. Push audit | | In progress |
@@ -451,18 +451,212 @@ operating system is pinned, publishing to sfyow.
 
 ### Phase 3. Failure files an issue
 
-Status: Not started
-Effort: medium. Model: sonnet.
-Depends on: Phase 2.
+Status: In progress
+Effort: medium. Model: sonnet. Planned at medium effort on
+2026-11-04, because the mechanism it needs already exists in this
+repository and this phase follows it rather than inventing one.
+Depends on: Phase 2 (Complete).
 
-Signal A from Q3.
+Signal A from Q3: the build ran and an image failed, so a GitHub
+issue appears without anyone looking for it, and closes itself
+when the image builds again. Signal B (Phase 4, the freshness
+watchdog) already covers the build *not running*; the two are kept
+separate on purpose because they fail differently, and this phase
+adds only the first.
 
-* `tools/file-build-failure-issue.sh`, taking the image name and
-  the run URL, following `canary.yml:95-155` but keyed on a
-  per-image label. In `tools/`, not inline in the workflow.
-* A follow-on job with `if: failure()` and `issues: write`.
-* Close or comment the issue when the image next builds, so a
-  fixed image does not leave a stale open issue behind.
+This phase touches no image contents -- no `build.sh`, no
+`elements/`, no `block-device-compat.yaml`. It adds one tool under
+`tools/`, its test, one follow-on job in `image-build.yml`, and a
+docs section. So the template's "an affected image was actually
+built" check does not apply; the end-to-end check is a deliberately
+broken build on `master` filing a real issue (Verification below).
+
+Per this repository's convention (see `docs/plans/index.md`), this
+phase is a section of the master plan rather than a separate file.
+Phase 2 is the single exception, because it was large and spanned
+33fl. Phase 3 is neither.
+
+#### What the survey found
+
+Surveyed on 2026-11-04 against `master` at 0bae79b. Three of the
+premises the original Phase 3 bullet list carried were written
+before Phase 4 landed and are now stale; they are corrected here,
+at source.
+
+* **The pattern to follow is in this repository now, not in
+  another one.** The original brief said to follow
+  shakenfist/actions' `canary.yml:95-155`. Phase 4 shipped
+  `tools/freshness-issue.sh` and `tools/test-freshness-issue.sh`,
+  which are a complete, tested, house-style implementation of the
+  exact file-or-comment-then-close-later pattern this phase needs:
+  `gh label create --force` for idempotency, an open-issue lookup
+  by label, comment-on-existing versus create-new, and a `resolve`
+  mode that closes the issue. `canary.yml` was its ancestor; the
+  in-repo tool is the model, and Phase 3's tool is close enough to
+  it that most of the brief is "mirror that file".
+
+* **The tool also resolves, so its name should not say only
+  "file".** The original name `file-build-failure-issue.sh`
+  describes half of what it does. It is
+  `tools/build-failure-issue.sh` here, matching
+  `freshness-issue.sh`, which files and resolves under one name.
+
+* **`if: failure()` on a single follow-on job is not enough for a
+  `fail-fast: false` matrix.** `image-build.yml` builds each image
+  in its own matrix leg (`.github/workflows/image-build.yml:79-113`,
+  job named `Build <image>`). A single `needs: build` job sees only
+  the matrix's aggregate conclusion, not which legs failed, and
+  `if: failure()` would skip the job entirely on a clean night --
+  but a clean night is exactly when issues for recovered images must
+  be *closed*. The design below reconciles the requested image list
+  against the run's per-job conclusions instead.
+
+Also confirmed: no `tools/build-failure-issue.sh` or
+`file-build-failure-issue.sh` exists yet, and `image-build.yml`
+files no issues (`grep -ni issue .github/workflows/image-build.yml`
+is empty). `tools/run-tests.sh` globs `tools/test-*.sh`, so a new
+suite is picked up with no edit there, and `ci.yml` runs it on every
+pull request. The build job holds `issues: write` nowhere today; its
+only elevated grant is the `images-publish` environment on `master`.
+
+#### Decisions
+
+**D1. A follow-on job reconciles the requested list against the
+run's actual per-job conclusions, rather than each leg reporting
+itself.** This is the decision most likely to be argued with,
+because filing from inside each matrix leg would be simpler YAML and
+need no API call. It is wrong for one concrete reason seen in this
+very workflow: in Phase 2's 2d run, debian-gnome:12's runner VM died
+mid-build, so that leg executed no further steps -- no log, no Loki
+summary, and under a report-from-inside-the-leg design, no issue
+either. The silence of a leg that never finished is precisely the
+failure Signal A exists to break. Only an observer that compares the
+list of images the run was asked to build against the conclusions
+GitHub recorded can report "this image did not succeed" including the
+died-VM and cancelled cases. That is the same reconcile-the-list idea
+Phase 1 used for Loki records, one level up.
+
+A secondary benefit: `issues: write` then lives only on this small
+follow-on job, never on the root-running build job that executes
+untrusted distribution scriptlets. That is a weak argument on its own
+-- the build job already holds the publish key and `id_ci`, both far
+more dangerous than a repo-scoped issue token -- but it costs nothing
+and it is the right shape.
+
+**D2. The reconcile logic lives in `tools/build-failure-issue.sh`,
+not in the workflow.** The fleet convention is that no workflow step
+carries more than about five lines, and a step that cannot be linted,
+tested or run by hand is the worst place for logic that fires at
+01:30. The tool mirrors `tools/freshness-issue.sh`:
+
+* `file <image> <run-url>` -- upsert the one open issue labelled
+  `build-failure:<image>`: comment if it exists, create it if not.
+* `resolve <image> <run-url>` -- close that issue if it is open, and
+  do nothing if it is not.
+* `reconcile <images-json> <jobs-json-file> <run-url>` -- for each
+  image in the requested list, find its `Build <image>` job in the
+  run's jobs JSON and call `file` when the conclusion is anything but
+  `success`, `resolve` when it is `success`. An image whose job is
+  missing, `cancelled`, `timed_out` or `skipped` is treated as a
+  failure to produce, not ignored.
+
+`file` and `resolve` are the testable primitives; `reconcile` is what
+the workflow calls.
+
+**D3. The label is per image: `build-failure:<image>`.** A single
+global label would hide a second broken image behind the first, which
+is the whole failure mode the matrix's `fail-fast: false` was chosen
+to avoid. One open issue per broken image, upserted so an outage that
+lasts a week leaves one issue and not seven. Colons are legal in
+GitHub label names; `freshness-issue.sh`'s label-create-with-`--force`
+idiom is copied verbatim so a missing label never loses a report.
+
+**D4. Only the real nightly files issues.** The follow-on job acts
+only when `github.ref == 'refs/heads/master'` and `inputs.publish` is
+true -- the same gate publishing uses. A branch dispatch, or a
+`publish: false` test run, builds and may fail images on purpose; it
+must not file production issues or close real ones. On every other
+ref the job is skipped.
+
+**D5. The follow-on job runs on a GitHub-hosted runner.** It needs
+only the automatic `GITHUB_TOKEN`, `gh`, and api.github.com; it runs
+no fleet code and touches no fleet secret. A hosted runner keeps it
+off the VMs entirely, its minutes are free on a public repository,
+and `gh` is preinstalled there, which the `[self-hosted, static]`
+runners do not guarantee. This is the same reasoning, and the same
+`# audit-ok: github-hosted-runner` marker, that `image-freshness.yml`
+already carries. Its permissions are `issues: write` (file, comment,
+close) and `actions: read` (read the run's job conclusions via
+`gh api repos/<repo>/actions/runs/<run_id>/jobs`). The workflow's
+top-level `permissions: contents: read` is unchanged; this job
+overrides it locally, exactly as the freshness job does.
+
+#### Step plan
+
+PR C is this repository alone. 3a and 3b each are one commit; 3c is
+one commit; 3d is operations the management session runs.
+
+| Step | Effort | Model | Isolation | Brief for sub-agent |
+|------|--------|-------|-----------|---------------------|
+| 3a | high | opus | none | **Write `tools/build-failure-issue.sh` and `tools/test-build-failure-issue.sh`.** Model the tool closely on `tools/freshness-issue.sh` (read it first): same `set -euo pipefail` header, same `repo` resolution from `GITHUB_REPOSITORY` with a `gh repo view` fallback, same `gh label create --force` idempotency, same comment-vs-create and close logic, same explanatory header comment. Three modes (D2): `file <image> <run-url>`, `resolve <image> <run-url>`, and `reconcile <images-json> <jobs-json-file> <run-url>`. The label is `build-failure:<image>` (D3); the title names the image, e.g. `<image> is failing to build`; the body links the run, says which image, and says the issue updates while the problem lasts and closes itself when the image builds again (mirror `freshness-issue.sh`'s body conventions, flush-left prose, no four-space indents). `reconcile` reads the jobs JSON (the shape `gh api .../actions/runs/<id>/jobs` returns: `.jobs[] | {name, conclusion}`, job name `Build <image>`) with `python3` or `jq` -- check which the other tools use (`image-matrix.sh` uses python3) and match it; for each image in the images-JSON array, look up its `Build <image>` conclusion and call `file` for anything other than `success`, `resolve` for `success`; a missing job counts as a failure. An empty or unparseable image list reconciles nothing and exits 0 (the list job may have failed; that is Signal B's business, not this tool's). The test mirrors `tools/test-freshness-issue.sh` exactly: a `gh` stub on `PATH` that records its argument list, cases for file-creates-when-none-open, file-comments-when-open, resolve-closes, resolve-noop, the per-image label appears in the gh call, and reconcile against a small jobs-JSON fixture (one failed image files, one succeeded image resolves, one cancelled image files, one image whose job is absent files). For each guard, show the case failing with the guard reverted and say so in the commit message, per repo convention. Verify: `bash -n`, `tools/run-tests.sh`, `pre-commit run --all-files`. No image build is involved. |
+| 3b | high | opus | none | **Add the issue-reporting job to `.github/workflows/image-build.yml`.** Read the whole file first for house style, and `image-freshness.yml:32-82` for the issue-job shape and the `# audit-ok: github-hosted-runner` marker. Add one job, suggested name `report-build-failures`, `needs: [list, build]`, `if: always() && github.ref == 'refs/heads/master' && inputs.publish` (D4 -- note `always()` so it still runs when a build leg failed), `runs-on: ubuntu-latest  # audit-ok: github-hosted-runner` (D5), `timeout-minutes: 10`, `permissions: {contents: read, issues: write, actions: read}`. Steps: check out with `persist-credentials: false`; fetch the run's jobs with `gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --paginate > jobs.json` (env `GH_TOKEN: ${{ github.token }}`); then `tools/build-failure-issue.sh reconcile '${{ needs.list.outputs.images }}' jobs.json "${RUN_URL}"` with `GH_TOKEN` and a `RUN_URL` built as `image-freshness.yml` builds it. Keep every step at or under the five-line rule -- the reconcile loop is in the tool, not here. Do **not** touch the `build` or `list` jobs, do **not** add any permission to them, and do **not** add a `schedule`, `pull_request` or `push` trigger (the file's header and D2 of Phase 2 forbid it). Verify: `actionlint` through `pre-commit run --all-files`, and `grep -nE '^\s+(pull_request\|pull_request_target\|push\|schedule):' .github/workflows/image-build.yml` still prints nothing. You cannot dispatch the workflow; say what 3d must confirm. |
+| 3c | medium | sonnet | none | **Document Signal A.** In `docs/nightly-build.md`, add a section near the existing failure/logs material: when an image fails to build, the nightly files a GitHub issue labelled `build-failure:<image>`, one issue per broken image, updated while it stays broken and closed automatically when the image next builds; point to the Actions run and the `.qcow2.log` for the cause. Note that this is Signal A and the freshness watchdog is Signal B, and that a build the runner never finished is still reported because the reporting job reconciles the requested list against actual job results. Check `ARCHITECTURE.md` and `AGENTS.md`: update `ARCHITECTURE.md` only if its description of the build mechanism now omits failure reporting (add a sentence if so); leave `AGENTS.md` unless a convention changed (it did not). Update the README only if a documentation link changed (it did not). Verify: `pre-commit run --all-files`, and that the mermaid/markdown linters pass. |
+| 3d | -- | -- | management session | **Prove Signal A end to end, then stop.** With the operator's go-ahead to push and open PR C: (1) dispatch `image-build.yml` on `master` with `publish: true` and `images: "debian:13 nosuch:image"`. debian:13 builds and publishes as normal; `nosuch:image` fails its leg. (2) Confirm a `build-failure:nosuch:image` issue was filed, and that debian:13 filed none. (3) Dispatch again on `master` with `publish: true` and `images: "debian:13"` and confirm it does not touch the `nosuch:image` issue (debian:13 is not that image). (4) Close the test issue by hand, or with `tools/build-failure-issue.sh resolve 'nosuch:image' <run-url>`, because `nosuch:image` is not in the default list and no nightly will resolve it. (5) Record the run URLs here under a *Results* note. Then stop for the operator; merging PR C stays with them. |
+
+#### Risks and mitigations
+
+**R1. The reconcile job spams issues if the gate is wrong.** A gate
+that fired on branch or `publish: false` runs would file issues for
+builds meant to fail. *Mitigation:* D4's gate, and 3d step (1) and
+(3) exercise it on a real dispatch before anyone trusts it. *Who
+checks:* the management session, in 3d.
+
+**R2. A job-name change silently stops reporting.** `reconcile` maps
+`Build <image>` names to images; renaming the build job without
+updating the tool would make every lookup miss and file nothing.
+*Mitigation:* the reconcile test asserts on the exact `Build <image>`
+name, so a rename breaks `tools/run-tests.sh` in CI rather than in
+production. *Who checks:* `ci.yml` on every pull request.
+
+**R3. The issue token could be abused from the build job.** It is
+not reachable: `issues: write` is on the hosted follow-on job only,
+never on the root-running build job (D1, D5). *Who checks:* the push
+audit, Phase 6, under checklist item 3.
+
+**R4. A GitHub API change to the jobs payload.** *Mitigation:* the
+reconcile test drives a fixed jobs-JSON fixture, so a parse the tool
+cannot handle is caught locally; and a missing conclusion is treated
+as a failure, which fails safe (an extra issue, not a missed one).
+
+#### Verification and definition of done
+
+Each item is something to run.
+
+- [ ] `tools/run-tests.sh` passes, including
+      `tools/test-build-failure-issue.sh`, and the 3a commit message
+      records each guard shown failing with the guard reverted.
+- [ ] `grep -nE '^\s+(pull_request|pull_request_target|push|schedule):'
+      .github/workflows/image-build.yml` prints nothing.
+- [ ] `grep -n 'issues: write' .github/workflows/image-build.yml`
+      shows it on the reporting job only, and `grep -n 'issues:'`
+      shows no grant on `build` or `list`.
+- [ ] `pre-commit run --all-files` passes, including `actionlint`.
+- [ ] A `master` dispatch with `publish: true` and
+      `images: "debian:13 nosuch:image"` leaves exactly one open
+      `build-failure:nosuch:image` issue and none for debian:13 (3d).
+- [ ] A following `master` dispatch building only debian:13 does not
+      close or comment that issue (3d step 3).
+
+#### Back brief
+
+Before executing any step, back brief the operator. One extra gate,
+because it is cheap to propose and expensive to unpick once issues
+start appearing in the tracker:
+
+* **Before 3b,** confirm the reconcile-from-a-follow-on-job shape
+  (D1) and the master-plus-publish gate (D4) with the operator,
+  since the alternative -- filing from inside each matrix leg -- is
+  the obvious design and this plan deliberately rejects it.
 
 ### Phase 4. Freshness watchdog
 

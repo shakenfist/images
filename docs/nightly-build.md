@@ -97,6 +97,40 @@ Shipping happens only when both `SF_IMAGES_LOKI_URL` and
 so a dispatch from a branch ships nothing and its run warns so when it
 starts. If `{job="image-build"}` goes quiet, check those first.
 
+## When a build fails
+
+When an image fails to build, the nightly files a GitHub issue labelled
+`build-failure:<image>`. There is one issue per broken image, so a
+second broken image is not hidden behind the first.
+
+The issue is updated for as long as the image keeps failing, so an
+outage is one issue rather than one per night, and it closes itself
+when the image next builds. To find the cause, follow the Actions run
+and the `.qcow2.log` named in [Where the logs are](#where-the-logs-are).
+
+This happens only on the real nightly: `master` with `publish` on. A
+dispatch from a branch, or with `publish` off, files nothing. A
+cancelled run also reports nothing at all: it does not file for a leg
+that failed before the cancel, nor close one that had already
+succeeded, so a cancel leaves the tracker as it was.
+
+The issue closes itself only for an image the nightly still builds. One
+dropped from `build.sh`'s default list, or dispatched by hand under a
+name the nightly never builds, keeps its issue open, because nothing
+reconciles an image the run was not asked for. Close it by hand, or run
+`tools/build-failure-issue.sh resolve <image> <run-url>` with `GH_TOKEN`
+set to a token that can write issues here; the run URL is only used as
+the closing comment's text, so for a hand close any URL, or a note, does.
+
+It also reports an image whose build never finished, such as one whose
+runner vanished mid-build. The report compares the images the run was
+asked to build with the results GitHub recorded, instead of waiting for
+each build to report for itself.
+
+This is the "did it build and fail" signal. The separate freshness
+watchdog (`image-freshness.yml`) is the "is the published site going
+stale" signal; they are kept apart because they fail in different ways.
+
 ## The publishing credential
 
 Publishing needs secrets that live in the `images-publish`

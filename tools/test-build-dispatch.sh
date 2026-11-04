@@ -64,7 +64,10 @@ CALLS="${WORK}/calls"
 : > "${CALLS}"
 
 build() {
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+    # '|' not tab: tab is IFS whitespace, so an empty middle argument
+    # would collapse on read and misname every later field. No dispatch
+    # argument contains '|'.
+    printf '%s|%s|%s|%s|%s|%s\n' \
         "$#" "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" >> "${CALLS}"
 }
 finish_run() { :; }
@@ -82,50 +85,67 @@ source "${REGION}"
 
 # --- check the shape of every call ----------------------------------
 
-# One build call per guard, no more and no fewer.
-calls="$(wc -l < "${CALLS}")"
-if [ "${calls}" -eq "${#LABELS[@]}" ]; then
-    ok "one build call per dispatch block (${calls})"
+# The guard labels and the output-path labels should be the same set:
+# every block fires once (all labels are present) and each writes to
+# its own label's directory. Comparing the two as sets catches a block
+# that writes to another block's directory -- the copy-paste slip that
+# published Debian 11 under three Debian 12 names for two years -- which
+# a count plus a membership test would both pass. It also subsumes the
+# "one call per guard" count.
+cut -d'|' -f2 "${CALLS}" \
+    | sed -E 's#^/srv/sf-images/output/([^/]+)/.*#\1#' \
+    | LC_ALL=C sort > "${WORK}/out_labels"
+printf '%s\n' "${LABELS[@]}" | LC_ALL=C sort > "${WORK}/guard_labels"
+if diff "${WORK}/guard_labels" "${WORK}/out_labels" > "${WORK}/label_diff"; then
+    ok "every guard label built its own output directory (${#LABELS[@]})"
 else
-    fail "expected ${#LABELS[@]} build calls, got ${calls}"
+    fail "guard labels and output directories disagree (< guard, > output):"
+    sed 's/^/          /' "${WORK}/label_diff"
 fi
 
-label_known() {
-    local want="$1" l
-    for l in "${LABELS[@]}"; do
-        [ "${l}" = "${want}" ] && return 0
-    done
-    return 1
-}
+# Three early images predate the agent and legitimately pass none; every
+# other block must pass shakenfist-agent, because a dropped agent
+# argument does not break the build (build_one guards on $5) -- it
+# publishes an agentless image that fails only when the guest is booted.
+AGENTLESS=" ubuntu:16.04 debian:8 debian:9 "
 
-while IFS=$'\t' read -r n a1 a2 a3 a4 a5; do
+while IFS='|' read -r n a1 a2 a3 a4 a5; do
     lbl="${a1#/srv/sf-images/output/}"
     lbl="${lbl%%/*}"
 
-    # 4 or 5 arguments. The glued-space regression produced 3.
-    if [ "${n}" -ne 4 ] && [ "${n}" -ne 5 ]; then
-        fail "${a1}: ${n} arguments, expected 4 or 5"
-    # $1 is the output path: ends in .qcow2, with a known label as its
-    # directory. A release glued onto it fails both halves.
-    elif [ "${a1}" = "${a1%.qcow2}" ]; then
+    # $1 is the output path and ends in .qcow2. This is what catches the
+    # glued-space regression in every block: for the three agentless
+    # ones the glued call also drops to three arguments, but for the 31
+    # five-argument ones it still has four and so passes the count check
+    # below -- the .qcow2 suffix is the assertion that catches those.
+    if [ "${a1}" = "${a1%.qcow2}" ]; then
         fail "${a1}: output path does not end in .qcow2"
-    elif ! label_known "${lbl}"; then
-        fail "${a1}: output directory '${lbl}' is not a known label"
-    # $2 is the release: non-empty and not a path.
-    elif [ -z "${a2}" ] || [ "${a2}" != "${a2//\//}" ]; then
-        fail "${lbl}: release '${a2}' is empty or contains a slash"
-    # $3 is the python-version marker: '-' or a number.
-    elif [ "${a3}" != "-" ] && ! [[ "${a3}" =~ ^[0-9]+$ ]]; then
-        fail "${lbl}: python marker '${a3}' is not '-' or a number"
-    # $4 is the element list: non-empty.
-    elif [ -z "${a4}" ]; then
-        fail "${lbl}: empty element list"
-    # $5, when present, is always the agent package.
-    elif [ "${n}" -eq 5 ] && [ "${a5}" != "shakenfist-agent" ]; then
-        fail "${lbl}: 5th argument '${a5}' is not shakenfist-agent"
-    else
-        ok "${lbl}"
+        continue
     fi
+    # Argument count: four for the agentless images, five for the rest,
+    # whose fifth argument is the agent package.
+    if [[ "${AGENTLESS}" == *" ${lbl} "* ]]; then
+        if [ "${n}" -ne 4 ]; then
+            fail "${lbl}: ${n} arguments, expected 4 (agentless)"; continue
+        fi
+    elif [ "${n}" -ne 5 ]; then
+        fail "${lbl}: ${n} arguments, expected 5 with shakenfist-agent"; continue
+    elif [ "${a5}" != "shakenfist-agent" ]; then
+        fail "${lbl}: 5th argument '${a5}' is not shakenfist-agent"; continue
+    fi
+    # $2 is the release: non-empty and not a path.
+    if [ -z "${a2}" ] || [ "${a2}" != "${a2//\//}" ]; then
+        fail "${lbl}: release '${a2}' is empty or contains a slash"; continue
+    fi
+    # $3 is the python-version marker: '-' or a number.
+    if [ "${a3}" != "-" ] && ! [[ "${a3}" =~ ^[0-9]+$ ]]; then
+        fail "${lbl}: python marker '${a3}' is not '-' or a number"; continue
+    fi
+    # $4 is the element list: non-empty.
+    if [ -z "${a4}" ]; then
+        fail "${lbl}: empty element list"; continue
+    fi
+    ok "${lbl}"
 done < "${CALLS}"
 
 echo

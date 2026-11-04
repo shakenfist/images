@@ -97,6 +97,29 @@ Shipping happens only when both `SF_IMAGES_LOKI_URL` and
 so a dispatch from a branch ships nothing and its run warns so when it
 starts. If `{job="image-build"}` goes quiet, check those first.
 
+## When a build fails
+
+When an image fails to build, the nightly files a GitHub issue labelled
+`build-failure:<image>`. There is one issue per broken image, so a
+second broken image is not hidden behind the first.
+
+The issue is updated for as long as the image keeps failing, so an
+outage is one issue rather than one per night, and it closes itself
+when the image next builds. To find the cause, follow the Actions run
+and the `.qcow2.log` named in [Where the logs are](#where-the-logs-are).
+
+This happens only on the real nightly: `master` with `publish` on. A
+dispatch from a branch, or with `publish` off, files nothing.
+
+It also reports an image whose build never finished, such as one whose
+runner vanished mid-build. The report compares the images the run was
+asked to build with the results GitHub recorded, instead of waiting for
+each build to report for itself.
+
+This is the "did it build and fail" signal. The separate freshness
+watchdog (`image-freshness.yml`) is the "is the published site going
+stale" signal; they are kept apart because they fail in different ways.
+
 ## The publishing credential
 
 Publishing needs secrets that live in the `images-publish`

@@ -18,7 +18,8 @@ which runs the script once per image on an ephemeral CI VM and
 publishes each result to the image server. See
 [docs/nightly-build.md](docs/nightly-build.md) for how that works,
 how to rebuild an image by hand, and how to check whether a merged
-change is actually running.
+change is actually running. A failed or never-completed image build
+raises a GitHub issue that closes itself on recovery.
 
 ## Element System
 

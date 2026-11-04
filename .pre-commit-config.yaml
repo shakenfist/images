@@ -16,16 +16,14 @@ repos:
       - id: actionlint
         args: ['-config-file', '.github/actionlint.yaml']
 
-  # tools/ only for now. build.sh carries over a hundred outstanding
-  # findings, and clearing them -- with a reason for each suppression
-  # rather than a blanket disable -- is its own piece of work, recorded
-  # in docs/plans/PLAN-image-build-modernisation.md. Adding it here
-  # before then would fail every commit.
+  # tools/ and the top-level build.sh. The executable hooks under
+  # elements/ are deliberately left out: they are DIB element data with
+  # their own conventions, and linting them is a separate piece of work.
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
-        files: ^tools/
+        files: ^(tools/.*|build\.sh)$
         types_or: [sh, bash, shell]
         args: ['-x']
 

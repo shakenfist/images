@@ -279,7 +279,7 @@ for this repository allows.
 | 0. Planning foundation | 39303ef (#3) | Complete |
 | 1. One failure stops one image | 47ed141 (#6), 3423343 (#12) | Complete |
 | 2. Move the build mechanism ([phase file](PLAN-image-build-modernisation-phase-02-move-the-build.md)) | da7683b (#23), 65deaf6 (#27), 76d080a (#34) | Complete |
-| 3. Failure files an issue | | In progress |
+| 3. Failure files an issue | b04af56 (#40) | Complete |
 | 4. Freshness watchdog | acccd2b (#5) | Complete |
 | 5. Repository standards | a75db0b (#20) | In progress |
 | 6. Push audit | | In progress |
@@ -713,6 +713,26 @@ review changed, recorded here because they depart from the step briefs:
   `total_count` can exceed the latest-attempt jobs after a partial
   re-run. Counting the jobs on the page instead cannot misfire that
   way, because a re-run does not grow the page.
+
+**2026-11-04 (AEDT), 3d live check on `master` (Results).** PR C merged
+as b04af56 (#40), then Signal A was exercised end to end on `master`.
+
+* A `publish: true` dispatch of `debian:13 nosuch:image`
+  ([run 41795494726](https://github.com/shakenfist/images/actions/runs/41795494726))
+  finished `failure`: `Build nosuch:image` failed, `Build debian:13`
+  succeeded, and the reporting job filed one `build-failure:nosuch:image`
+  issue (#41) and none for `debian:13`.
+* A following `publish: true` dispatch of `debian:13` alone
+  ([run 41797248163](https://github.com/shakenfist/images/actions/runs/41797248163))
+  finished `success` and left #41 open with no new comment: a run that
+  does not name an image does not disturb that image's issue.
+* #41 was then closed with `tools/build-failure-issue.sh resolve
+  'nosuch:image' <run-url>`, which posted the recovery comment and closed
+  the issue, exercising the `resolve` primitive against a real issue.
+  `nosuch:image` is not in the default list, so no nightly would have
+  resolved it.
+
+Every Definition-of-done item above now passes.
 
 ### Phase 4. Freshness watchdog
 

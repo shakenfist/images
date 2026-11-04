@@ -805,12 +805,16 @@ decides.
 ### Phase 5. Repository standards
 
 Status: In progress
-Effort: medium. Model: sonnet.
+Effort: medium. Model: sonnet. The one code step (5a) runs at high
+effort on opus, because it edits `build.sh` -- the live build system
+every image the fleet boots comes from -- where a wrongly-quoted
+expansion is a silent build break, not a lint nit. Planned 2026-11-05.
 Merged: a75db0b (#20), which landed most of this phase from the
 fleet consistency work rather than from this plan.
+Depends on: nothing outstanding. Phase 6 (push audit) reads this
+phase's landing, so it waits on this.
 
 Close the gap between this repository and the rest of the fleet.
-Each item is separable; none blocks the others.
 
 **Corrected 2026-10-24 by Phase 2's survey.** This section was
 written before #20, and most of its list is done:
@@ -824,23 +828,139 @@ written before #20, and most of its list is done:
   `PLAN-image-supply-chain.md` phase 6. #20 measured it at 30 pass
   and 2 fail with that scope lifted.
 
-What remains:
+**Scope narrowed on 2026-11-05.** Of the items that remained, only the
+`build.sh` shellcheck cleanup is code this plan owns, and it is what
+this phase takes. The other two are deferred as decisions rather than
+dropped (see *Deferred* below). So this phase, as planned here, is the
+shellcheck cleanup alone.
 
-* The outstanding shellcheck findings in `build.sh`, which
-  `.pre-commit-config.yaml` still excludes. The count was 126 at
-  8a179b6; re-count rather than trusting it. Expect to suppress some
-  deliberately; a suppression with a reason is a result, a blanket
-  disable is not.
-* #19: the `master` versus `develop` default branch, and secret
-  scanning with push protection. Both are repository settings and
-  decisions, not files. A rename is not free: the workflows trigger
-  on `master` by name, and until Phase 2's cutover the build host's
-  checkout pulls `master`.
-* Whether to widen `REPO_OVERRIDES['images']` beyond `eol-distro`,
-  which is shakenfist/development's decision 6.5 to revisit.
-* The `AGENTS.md` item this section used to carry ("manually or via
-  cron") moved to Phase 2's cutover step, which is what makes it
-  wrong.
+Per this repository's convention (see `docs/plans/index.md`), this
+phase is a section of the master plan rather than a separate file.
+Phase 2 is the single exception, because it was large and spanned
+33fl; this phase is neither.
+
+#### What the survey found
+
+Surveyed on 2026-11-05 against `master` at b04af56, with the pinned
+shellcheck (`shellcheck-py==0.11.0.1`, shellcheck 0.11.0 -- the version
+`.pre-commit-config.yaml` runs).
+
+* **119 findings, not 126.** The 126 above was at 8a179b6; re-counted
+  here. All are low severity -- 40 warning, 78 info, 1 style, zero
+  error -- and 116 of them are two idioms: 77 SC2086 (quote to prevent
+  word-splitting and globbing) and 39 SC2046 (quote this command
+  substitution). The other three are one-offs: SC2006 (one legacy
+  backtick substitution), SC2196 (one `egrep`), and SC2155 (one
+  `declare`-and-assign that masks a return value).
+* **`build.sh` is the only shell script outside `tools/`**, and it
+  sources nothing, so the hook's `-x` flag is moot for it and there is
+  no sourced-file complication. The 34 files under `elements/` are DIB
+  element data, not `.sh`.
+* **The hook excludes `build.sh` by `files: ^tools/`,** with a comment
+  that points here. Bringing it under the hook is the forcing function
+  and the end state; clearing the findings is what makes that green.
+* **The findings cluster in repeated build blocks** (for example the
+  run around lines 990-1006), so the real variety is far smaller than
+  119. But each site still needs a per-site judgment -- quote where the
+  expansion is meant to be one argument, suppress with a reason where
+  the word-splitting is deliberate (building a DIB element or argument
+  list). Making that judgment on the script that builds every fleet
+  image is why 5a is high/opus.
+
+#### Decisions
+
+**D1. Clear every finding; do not blanket-disable.** The end state is
+`build.sh` under the same shellcheck hook as `tools/`, reporting
+nothing. Each finding is either fixed by quoting, or carries a
+`# shellcheck disable=SCxxxx` on the line above it with a one-line
+reason naming why the word-splitting is intended. A file-top blanket
+disable is not a result; it hides the next real finding -- the same
+error-path-that-cannot-report class this plan has fought since Phase 1.
+
+**D2. Scope the hook to `tools/` and `build.sh`, not all shell.**
+Change the hook's `files: ^tools/` to `files: ^(tools/.*|build\.sh)$`
+rather than dropping the filter. Dropping it would drag every
+executable hook under `elements/` (DIB `finalise.d`-style scripts with
+bash shebangs) into the linter at once -- a separate piece of work with
+its own judgments. This phase brings in exactly the one script it
+cleaned.
+
+**D3. The build system is edited, so an image is actually built.**
+Unlike Phase 3, this phase changes `build.sh`, and a quoting change can
+alter how arguments split. So the Definition of done includes a real
+build (5b): a branch dispatch with `publish: false` that builds a
+representative image to success. `publish: false` keeps it off the site
+and the branch ref keeps it off the issue tracker (Phase 3's D4 gate),
+so it is safe to run before merge.
+
+#### Deferred (recorded, not dropped)
+
+* **#19: `master` vs `develop`, and secret-scanning push protection.**
+  Repository settings and a disruptive decision, not code: every
+  workflow triggers on `master` by name and fleet repositories
+  reference it, so a rename is its own deliberate change, not a rider
+  on a lint cleanup. Tracked in open issue #19. The operator chose on
+  2026-11-05 to keep it out of this phase.
+* **Widening `REPO_OVERRIDES['images']` beyond `eol-distro`.** This is
+  shakenfist/development's decision 6.5 to revisit, external to this
+  repository; nothing here can settle it.
+* The `AGENTS.md` "manually or via cron" item moved to Phase 2's
+  cutover and is done.
+
+#### Step plan
+
+PR D is this repository alone. 5a is one commit; 5b is operations the
+management session runs.
+
+| Step | Effort | Model | Isolation | Brief for sub-agent |
+|------|--------|-------|-----------|---------------------|
+| 5a | high | opus | none | **Clear every shellcheck finding in `build.sh` and bring it under the pre-commit hook.** Read `build.sh` in full first; it is the build system and the point is to *not* change its behaviour. Run the pinned shellcheck (`shellcheck-py==0.11.0.1` in a venv, `shellcheck -x build.sh`) for the 119 findings: 77 SC2086, 39 SC2046, one each of SC2006, SC2196, SC2155. For each: quote the expansion where it is meant to be a single argument; where the word-splitting is deliberate (an unquoted expansion meant to become several arguments, such as a DIB element list), add `# shellcheck disable=SCxxxx` on the line above with a one-line reason -- never a file-top blanket disable (D1). Fix the three one-offs properly: backtick to `$(...)` (SC2006), `egrep` to `grep -E` (SC2196), split the `declare`-and-assign so the return value is not masked (SC2155). Then bring `build.sh` under the hook in `.pre-commit-config.yaml`: change `files: ^tools/` to `files: ^(tools/.*|build\.sh)$` (D2), leaving the `-x` arg and the pinned rev. Leave the work uncommitted; report, per changed line, whether it was quoted or suppressed and the reason for each suppression. Verify: the pinned `shellcheck -x build.sh` reports nothing; `pre-commit run shellcheck --all-files` passes; `bash -n build.sh`; `tools/run-tests.sh` passes. Do **not** touch `build()`'s logic, the retention arithmetic, the Loki or publish paths, or any `elements/` file. A behavioural change is out of scope; if a finding cannot be resolved without one, leave the code as is, suppress with that reason, and say so in the report. |
+| 5b | -- | -- | management session | **Build a representative image to prove nothing broke, then stop.** With the operator's go-ahead to push PR D: dispatch `image-build.yml` on the phase branch with `publish: false` and `images: "debian:13 rocky:9"` (two different build paths -- Debian apt and Rocky dnf). Confirm both legs finish `success`; `publish: false` means nothing reaches the site and the branch ref means the reporting job is skipped (Phase 3 D4). Record the run URL under a *Results* note here. If a leg fails, the quoting changed behaviour -- hand back to 5a rather than merging. Then stop for the operator; merging PR D stays with them. |
+
+#### Risks and mitigations
+
+**R1. A quoting fix silently breaks a build.** An unquoted expansion
+meant to split into several arguments becomes one if blindly quoted --
+the classic build break. *Mitigation:* per-site judgment in 5a (quote
+vs suppress-with-reason), the management review of the diff, and the
+real build in 5b before anyone merges. *Who checks:* the management
+session in review, and 5b.
+
+**R2. Suppressions used as a shortcut.** A `# shellcheck disable` with
+no reason is a blanket disable in disguise. *Mitigation:* D1 requires a
+one-line reason per suppression; review rejects reason-free ones, and
+the 5a commit message lists each suppression with its reason. *Who
+checks:* the management session in review.
+
+**R3. The hook pulls in `elements/` scripts.** Dropping the `files:`
+filter would lint every bash hook under `elements/`. *Mitigation:* D2
+scopes the filter to `tools/` and `build.sh` explicitly. *Who checks:*
+a DoD grep that the filter names `build.sh` and matches no `elements/`
+path.
+
+#### Verification and definition of done
+
+Each item is something to run.
+
+- [ ] The pinned `shellcheck -x build.sh` reports zero findings.
+- [ ] `.pre-commit-config.yaml`'s shellcheck hook `files:` matches
+      `build.sh` and still `tools/`, and matches no `elements/` path;
+      `pre-commit run shellcheck --all-files` passes.
+- [ ] Every `# shellcheck disable` added to `build.sh` carries a reason
+      comment; `grep -n 'shellcheck disable' build.sh` shows only
+      reasoned suppressions.
+- [ ] `tools/run-tests.sh` passes and `bash -n build.sh` is clean.
+- [ ] A `publish: false` branch dispatch building `debian:13 rocky:9`
+      finishes with both legs `success` (5b), run URL recorded.
+
+#### Back brief
+
+Before executing, back brief the operator:
+
+* the end-state hook scope (`tools/` + `build.sh`, not all shell: D2);
+* the suppress-with-reason policy (D1);
+* that 5b is a `publish: false` branch dispatch of `debian:13 rocky:9`,
+  and confirm those two are the right representative pair.
 
 ### Phase 6. Push audit
 

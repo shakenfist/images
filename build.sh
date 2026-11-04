@@ -485,16 +485,19 @@ preamble_log=$(mktemp)
 
     for patch in ../diskimage-builder-patches/*.patch; do
         echo "Applying patch $patch"
-        git apply $patch
+        git apply "$patch"
     done
 
-    apt-get install -y `bindep --list_all newline`
+    # bindep prints the dependency list one package per line, and each
+    # one is a separate argument to apt-get, so the splitting is intended.
+    # shellcheck disable=SC2046
+    apt-get install -y $(bindep --list_all newline)
     python3 setup.py develop
     cd ..
 
     # diskimage-builder requires the hostname be known, or it gets confused
     hostname=$(hostname)
-    if [ $(grep -c $hostname /etc/hosts) -lt 1 ]; then
+    if [ "$(grep -c "$hostname" /etc/hosts)" -lt 1 ]; then
         sed -i "s/127.0.0.1\tlocalhost/127.0.0.1\tlocalhost $hostname/" /etc/hosts
     fi
 
@@ -663,12 +666,13 @@ function build_one () {
 
     echo "OS release: ${2}"
     export DIB_APT_OPTIONS=""
-    if [ $(echo "${2}" | egrep -c "(jessie|stretch|buster)" || true) -gt 0 ]; then
+    if [ "$(echo "${2}" | grep -E -c "(jessie|stretch|buster)" || true)" -gt 0 ]; then
 	echo "Debian release which is ancient, overriding the apt mirror."
 	export DIB_DISTRIBUTION_MIRROR="https://deb.freexian.com/extended-lts"
 	export DIB_APT_SOURCES_CONF="default:deb https://deb.freexian.com/extended-lts ${2} main contrib non-free
 lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
-	export DIB_APT_KEYRING=$(pwd)"/debian-release-freexian.gpg"
+	DIB_APT_KEYRING="$(pwd)/debian-release-freexian.gpg"
+	export DIB_APT_KEYRING
     fi
 
     echo "Python version: ${3}"
@@ -679,7 +683,7 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
     fi
 
     echo "Shakenfist agent package: ${5}"
-    if [ ! -z ${5} ]; then
+    if [ ! -z "${5}" ]; then
 	export DIB_SF_AGENT_PACKAGE="${5}"
 	export build_args="${build_args} sf-agent"
     fi
@@ -720,14 +724,17 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
     # published beside the image and is not masked the way the Actions
     # log is. It keeps them out of the build and its log; it does not
     # stop root code on this machine reading them some other way.
+    # $4 and build_args are space-separated DIB element lists; each word is
+    # a separate argument to disk-image-create, so the splitting is intended.
+    # shellcheck disable=SC2086
     env -u SF_IMAGES_PUBLISH_TARGET -u RSYNC_RSH DIB_RELEASE="$2" \
-        /usr/local/bin/disk-image-create $4 ${build_args} -u -o temp.qcow2 | tee ${output}.log
+        /usr/local/bin/disk-image-create $4 ${build_args} -u -o temp.qcow2 | tee "${output}.log"
     dib_status=${PIPESTATUS[0]}
     set +x
 
     # If we detected a checksum failure, clear the cache. This seems common with
     # upstream Ubuntu images for some reason.
-    if [ $(grep -c "computed checksum did NOT match" ${output}.log) -gt 0 ]; then
+    if [ "$(grep -c "computed checksum did NOT match" "${output}.log")" -gt 0 ]; then
         rm -rf /srv/sf-images/cache
     fi
 
@@ -740,14 +747,14 @@ lts:deb https://deb.freexian.com/extended-lts ${2}-lts main contrib non-free"
     # Kept as a second assertion now that the first one works. It
     # catches a builder that exits zero having produced nothing,
     # which the exit status alone would not.
-    if [ $(grep -c "Build completed successfully" ${output}.log) -lt 1 ]; then
+    if [ "$(grep -c "Build completed successfully" "${output}.log")" -lt 1 ]; then
         echo "BUILD FAILED: no success marker in the build log"
         push_log_to_loki "${output}.log" "${label}" "failure"
         return 1
     fi
 
     # Transcode the image into the preferred format
-    if ! qemu-img convert -t none -o cluster_size=2048K -c -O qcow2 temp.qcow2 ${output}; then
+    if ! qemu-img convert -t none -o cluster_size=2048K -c -O qcow2 temp.qcow2 "${output}"; then
         echo "BUILD FAILED: could not transcode the image"
         push_log_to_loki "${output}.log" "${label}" "failure"
         return 1
@@ -987,175 +994,175 @@ function prune_published_in () {
 }
 
 # Too old for the agent to run, but convenient to have for testing
-if [ $(echo $images | grep -c "ubuntu:16.04") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "ubuntu:16.04")" -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:16.04/ubuntu-16.04-${datestamp}.qcow2"
-    build ${output} xenial "-" "apparmor utilities debian-old-extras ubuntu ubuntu-remove-pollinate"
+    build "${output}" xenial "-" "apparmor utilities debian-old-extras ubuntu ubuntu-remove-pollinate"
 fi
 
 # Images containing the agent
-if [ $(echo $images | grep -c "ubuntu:18.04") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "ubuntu:18.04")" -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:18.04/ubuntu-18.04-sfagent-${datestamp}.qcow2"
-    build ${output} bionic "-" "apparmor utilities debian-old-extras ubuntu ubuntu-remove-pollinate" shakenfist-agent
+    build "${output}" bionic "-" "apparmor utilities debian-old-extras ubuntu ubuntu-remove-pollinate" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "ubuntu:20.04") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "ubuntu:20.04")" -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:20.04/ubuntu-20.04-sfagent-${datestamp}.qcow2"
-    build ${output} focal 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
+    build "${output}" focal 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "ubuntu:22.04") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "ubuntu:22.04")" -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:22.04/ubuntu-22.04-sfagent-${datestamp}.qcow2"
-    build ${output} jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
+    build "${output}" jammy 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "ubuntu:24.04") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "ubuntu:24.04")" -gt 0 ]; then
     output="/srv/sf-images/output/ubuntu:24.04/ubuntu-24.04-sfagent-${datestamp}.qcow2"
-    build ${output} noble 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
+    build "${output}" noble 3 "apparmor utilities debian-old-extras ubuntu ubuntu-remove-snap ubuntu-remove-firmware ubuntu-remove-pollinate" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian:8") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian:8")" -gt 0 ]; then
     output="/srv/sf-images/output/debian:8/debian-8-${datestamp}.qcow2"
-    build ${output} jessie 3 "apparmor utilities debian-old-extras debian debian-systemd"
+    build "${output}" jessie 3 "apparmor utilities debian-old-extras debian debian-systemd"
 fi
 
-if [ $(echo $images | grep -c "debian:9") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian:9")" -gt 0 ]; then
     output="/srv/sf-images/output/debian:9/debian-9-${datestamp}.qcow2"
-    build ${output} stretch 3 "apparmor utilities debian-old-extras debian debian-systemd"
+    build "${output}" stretch 3 "apparmor utilities debian-old-extras debian debian-systemd"
 fi
 
-if [ $(echo $images | grep -c "debian:10") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian:10")" -gt 0 ]; then
     output="/srv/sf-images/output/debian:10/debian-10-sfagent-${datestamp}.qcow2"
-    build ${output} buster 3 "apparmor utilities debian-old-extras debian debian-systemd" shakenfist-agent
+    build "${output}" buster 3 "apparmor utilities debian-old-extras debian debian-systemd" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian:11") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian:11")" -gt 0 ]; then
     output="/srv/sf-images/output/debian:11/debian-11-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd" shakenfist-agent
+    build "${output}" bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian:12") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian:12")" -gt 0 ]; then
     output="/srv/sf-images/output/debian:12/debian-12-sfagent-${datestamp}.qcow2"
-    build ${output} bookworm 3 "apparmor utilities debian-12-extras debian debian-systemd" shakenfist-agent
+    build "${output}" bookworm 3 "apparmor utilities debian-12-extras debian debian-systemd" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian:13") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian:13")" -gt 0 ]; then
     output="/srv/sf-images/output/debian:13/debian-13-sfagent-${datestamp}.qcow2"
-    build ${output} trixie 3 "apparmor utilities debian-13-extras debian debian-systemd" shakenfist-agent
+    build "${output}" trixie 3 "apparmor utilities debian-13-extras debian debian-systemd" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "centos:7") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "centos:7")" -gt 0 ]; then
     output="/srv/sf-images/output/centos:7/centos-7-sfagent-${datestamp}.qcow2"
-    build ${output} 7 "-" "centos rhel-extras" shakenfist-agent
+    build "${output}" 7 "-" "centos rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "centos:8-stream") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "centos:8-stream")" -gt 0 ]; then
     output="/srv/sf-images/output/centos:8-stream/centos-8-stream-sfagent-${datestamp}.qcow2"
-    build ${output} 8-stream "-" "centos rhel-extras" shakenfist-agent
+    build "${output}" 8-stream "-" "centos rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "centos:9-stream") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "centos:9-stream")" -gt 0 ]; then
     output="/srv/sf-images/output/centos:9-stream/centos-9-stream-sfagent-${datestamp}.qcow2"
-    build ${output} 9-stream "-" "centos rhel-extras" shakenfist-agent
+    build "${output}" 9-stream "-" "centos rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "fedora:34") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "fedora:34")" -gt 0 ]; then
     output="/srv/sf-images/output/fedora:34/fedora-34-sfagent-${datestamp}.qcow2"
-    build ${output} 34 "-" "fedora rhel-extras" shakenfist-agent
+    build "${output}" 34 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "fedora:38") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "fedora:38")" -gt 0 ]; then
     output="/srv/sf-images/output/fedora:38/fedora-38-sfagent-${datestamp}.qcow2"
-    build ${output} 38 "-" "fedora rhel-extras" shakenfist-agent
+    build "${output}" 38 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "fedora:39") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "fedora:39")" -gt 0 ]; then
     output="/srv/sf-images/output/fedora:39/fedora-39-sfagent-${datestamp}.qcow2"
-    build ${output} 39 "-" "fedora rhel-extras" shakenfist-agent
+    build "${output}" 39 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "fedora:40") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "fedora:40")" -gt 0 ]; then
     output="/srv/sf-images/output/fedora:40/fedora-40-sfagent-${datestamp}.qcow2"
-    build ${output} 40 "-" "fedora rhel-extras" shakenfist-agent
+    build "${output}" 40 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "fedora:41") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "fedora:41")" -gt 0 ]; then
     output="/srv/sf-images/output/fedora:41/fedora-41-sfagent-${datestamp}.qcow2"
-    build ${output} 41 "-" "fedora rhel-extras" shakenfist-agent
+    build "${output}" 41 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "fedora:42") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "fedora:42")" -gt 0 ]; then
     output="/srv/sf-images/output/fedora:42/fedora-42-sfagent-${datestamp}.qcow2"
-    build ${output} 42 "-" "fedora rhel-extras" shakenfist-agent
+    build "${output}" 42 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "fedora:43") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "fedora:43")" -gt 0 ]; then
     output="/srv/sf-images/output/fedora:43/fedora-43-sfagent-${datestamp}.qcow2"
-    build ${output} 43 "-" "fedora rhel-extras" shakenfist-agent
+    build "${output}" 43 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "fedora:44") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "fedora:44")" -gt 0 ]; then
     output="/srv/sf-images/output/fedora:44/fedora-44-sfagent-${datestamp}.qcow2"
-    build ${output} 44 "-" "fedora rhel-extras" shakenfist-agent
+    build "${output}" 44 "-" "fedora rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "rocky:8") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "rocky:8")" -gt 0 ]; then
     output="/srv/sf-images/output/rocky:8/rocky-8-sfagent-${datestamp}.qcow2"
-    build ${output} 8 "-" "rocky-container rhel-extras" shakenfist-agent
+    build "${output}" 8 "-" "rocky-container rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "rocky:9") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "rocky:9")" -gt 0 ]; then
     output="/srv/sf-images/output/rocky:9/rocky-9-sfagent-${datestamp}.qcow2"
-    build ${output} 9 "-" "rocky-container rhel-extras" shakenfist-agent
+    build "${output}" 9 "-" "rocky-container rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "rocky:10") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "rocky:10")" -gt 0 ]; then
     output="/srv/sf-images/output/rocky:10/rocky-10-sfagent-${datestamp}.qcow2"
-    build ${output} 10 "-" "rocky-container rhel-extras" shakenfist-agent
+    build "${output}" 10 "-" "rocky-container rhel-extras" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-docker:11") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-docker:11")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-docker:11/debian-11-docker-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd docker-host" shakenfist-agent
+    build "${output}" bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd docker-host" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-docker:12") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-docker:12")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-docker:12/debian-12-docker-sfagent-${datestamp}.qcow2"
-    build ${output} bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras docker-host" shakenfist-agent
+    build "${output}" bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras docker-host" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-docker:13") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-docker:13")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-docker:13/debian-13-docker-sfagent-${datestamp}.qcow2"
-    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras docker-host" shakenfist-agent
+    build "${output}" trixie 3 "apparmor utilities debian debian-systemd debian-13-extras docker-host" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-gnome:11") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-gnome:11")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-gnome:11/debian-11-gnome-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd gnome-desktop" shakenfist-agent
+    build "${output}" bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd gnome-desktop" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-gnome:12") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-gnome:12")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-gnome:12/debian-12-gnome-sfagent-${datestamp}.qcow2"
-    build ${output} bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
+    build "${output}" bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras gnome-desktop" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-gnome:13") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-gnome:13")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-gnome:13/debian-13-gnome-sfagent-${datestamp}.qcow2"
-    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras gnome-desktop" shakenfist-agent
+    build "${output}" trixie 3 "apparmor utilities debian debian-systemd debian-13-extras gnome-desktop" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-xfce:11") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-xfce:11")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-xfce:11/debian-11-xfce-sfagent-${datestamp}.qcow2"
-    build ${output} bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd xfce-desktop" shakenfist-agent
+    build "${output}" bullseye 3 "apparmor utilities debian-old-extras debian debian-systemd xfce-desktop" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-xfce:12") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-xfce:12")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-xfce:12/debian-12-xfce-sfagent-${datestamp}.qcow2"
-    build ${output} bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
+    build "${output}" bookworm 3 "apparmor utilities debian debian-systemd debian-12-extras xfce-desktop" shakenfist-agent
 fi
 
-if [ $(echo $images | grep -c "debian-xfce:13") -gt 0 ]; then
+if [ "$(echo "$images" | grep -c "debian-xfce:13")" -gt 0 ]; then
     output="/srv/sf-images/output/debian-xfce:13/debian-13-xfce-sfagent-${datestamp}.qcow2"
-    build ${output} trixie 3 "apparmor utilities debian debian-systemd debian-13-extras xfce-desktop" shakenfist-agent
+    build "${output}" trixie 3 "apparmor utilities debian debian-systemd debian-13-extras xfce-desktop" shakenfist-agent
 fi
 
 finish_run

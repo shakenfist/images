@@ -140,19 +140,23 @@ case "${mode}" in
             exit 2
         fi
 
-        # python3 turns the two JSON inputs into one "action image"
-        # line per image, so the shell never parses JSON itself. An
-        # empty or unparseable image list yields no lines, so nothing
-        # is reconciled and the loop exits 0: the list job may have
-        # failed, and that is the freshness watchdog's business, not
-        # this tool's.
-        while IFS=$'\t' read -r action image; do
-            [ -n "${action}" ] || continue
-            case "${action}" in
-                file) do_file "${image}" "${run_url}" ;;
-                resolve) do_resolve "${image}" "${run_url}" ;;
-            esac
-        done < <(python3 - "${images_json}" "${jobs_file}" <<'PY'
+        # python3 turns the two JSON inputs into one "action image" line
+        # per image, so the shell never parses JSON itself. The plan is
+        # captured into a variable before the loop rather than piped
+        # into it: a process substitution's exit status is invisible to
+        # errexit, so a python that cannot parse the jobs file would
+        # otherwise feed the loop zero lines and let the script exit 0 --
+        # a silent green run on a night images failed, the one outcome
+        # this tool exists to prevent. Assigned here, a non-zero python
+        # aborts the script under errexit instead. An empty or
+        # unparseable image *list* is not an error: it yields no lines
+        # and reconciles nothing, because the list job may have failed
+        # and that is the freshness watchdog's business. A jobs *file*
+        # that will not parse, or is not the object the API returns, is
+        # an error and exits non-zero. -I keeps the working directory
+        # off sys.path, so a stray json.py in the checkout is not
+        # imported.
+        plan=$(python3 -I - "${images_json}" "${jobs_file}" <<'PY'
 import json
 import sys
 
@@ -163,8 +167,14 @@ try:
 except (ValueError, IndexError):
     sys.exit(0)
 
-with open(sys.argv[2]) as handle:
-    run = json.load(handle)
+try:
+    with open(sys.argv[2]) as handle:
+        run = json.load(handle)
+except ValueError:
+    sys.exit(2)
+
+if not isinstance(run, dict):
+    sys.exit(2)
 
 conclusions = {}
 for job in run.get('jobs', []):
@@ -177,6 +187,26 @@ for image in images:
         print('file\t' + image)
 PY
         )
+
+        # Keep going after a per-image gh failure, so one transient
+        # error does not abandon every image after it in the list, but
+        # remember it and exit non-zero at the end so the run still goes
+        # red and the failure is seen rather than lost.
+        rc=0
+        while IFS=$'\t' read -r action image; do
+            [ -n "${action}" ] || continue
+            case "${action}" in
+                file)
+                    do_file "${image}" "${run_url}" \
+                        || { echo "Could not file an issue for ${image}." >&2; rc=1; }
+                    ;;
+                resolve)
+                    do_resolve "${image}" "${run_url}" \
+                        || { echo "Could not resolve the issue for ${image}." >&2; rc=1; }
+                    ;;
+            esac
+        done <<< "${plan}"
+        exit "${rc}"
         ;;
 
     *)

@@ -27,9 +27,12 @@ failed=0
 
 # A gh that records what it was asked to do. "issue list" answers with
 # the number in OPEN_ISSUE, but only for the label named in OPEN_LABEL,
-# so a case can say which image already has an open issue. The
-# mutating calls are appended, so a single reconcile run's several
-# calls can all be inspected.
+# so a case can say which image already has an open issue. The mutating
+# calls, including "label create", are appended, so a single reconcile
+# run's several calls can all be inspected -- recording the label create
+# is what lets a test pin the guard that files it before the issue. If
+# GH_FAIL_MATCH is set and an argument contains it, the call fails after
+# being recorded, which stands in for a transient gh error on one image.
 mkdir -p "${WORK}/bin"
 cat > "${WORK}/bin/gh" << 'EOF'
 #!/bin/bash
@@ -46,10 +49,13 @@ case "$1 $2" in
             echo "${OPEN_ISSUE:-}"
         fi
         ;;
-    "issue create"|"issue comment"|"issue close")
+    "issue create"|"issue comment"|"issue close"|"label create")
         printf '%s\n' "$@" >> "${GH_RECORD}"
         ;;
 esac
+if [ -n "${GH_FAIL_MATCH:-}" ] && [[ "$*" == *"${GH_FAIL_MATCH}"* ]]; then
+    exit 1
+fi
 exit 0
 EOF
 chmod +x "${WORK}/bin/gh"
@@ -122,6 +128,14 @@ check "file creates when none open" 0 "${got}" "debian:13 is failing to build"
 got=$(run file debian:13 https://example/run)
 check "file labels the issue per image" 0 "${got}" "build-failure:debian:13"
 
+# the label is created, with --force, before the issue is filed: gh
+# issue create fails outright on a missing label, so without this the
+# first report of an outage is lost. The suite could not break this
+# guard until the stub recorded label create.
+got=$(run file debian:13 https://example/run)
+check "file forces the per-image label create" 0 "${got}" "--force"
+record_has "the label create names the image" "The debian:13 image is failing to build"
+
 # file comments when the image already has an open issue.
 got=$(OPEN_LABEL="build-failure:debian:13" OPEN_ISSUE=42 \
     run file debian:13 https://example/run)
@@ -144,17 +158,22 @@ check "file wants an image and a run URL" 2 "${got}" -
 # JSON is the shape gh api .../runs/<id>/jobs returns: one failed, one
 # succeeded, one cancelled, and a fourth image whose Build job never
 # appears at all.
+# The null conclusion is what the API reports for a job that never
+# reached one -- the closest shape to the died-runner incident this
+# design exists to catch -- so it is pinned rather than left riding on
+# the generic not-success branch.
 cat > "${WORK}/jobs.json" << 'EOF'
 {
   "jobs": [
     {"name": "Build broken:img", "conclusion": "failure"},
     {"name": "Build ok:img", "conclusion": "success"},
     {"name": "Build cancelled:img", "conclusion": "cancelled"},
+    {"name": "Build stalled:img", "conclusion": null},
     {"name": "List the images to build", "conclusion": "success"}
   ]
 }
 EOF
-images='["broken:img","ok:img","cancelled:img","absent:img"]'
+images='["broken:img","ok:img","cancelled:img","stalled:img","absent:img"]'
 
 # ok:img has an open issue so its success has something to close.
 got=$(OPEN_LABEL="build-failure:ok:img" OPEN_ISSUE=99 \
@@ -169,6 +188,7 @@ else
 fi
 record_has "reconcile files the failed image" "broken:img is failing to build"
 record_has "reconcile files the cancelled image" "cancelled:img is failing to build"
+record_has "reconcile files the null-conclusion image" "stalled:img is failing to build"
 record_has "reconcile files the image with no job" "absent:img is failing to build"
 record_has "reconcile closes the succeeded image" "ok:img built successfully again"
 record_lacks "reconcile does not file the succeeded image" "ok:img is failing to build"
@@ -180,6 +200,49 @@ check "an empty image list reconciles nothing" 0 "${got}" -
 # An unparseable image list is treated the same way.
 got=$(run reconcile 'not json' "${WORK}/jobs.json" https://example/run)
 check "an unparseable image list reconciles nothing" 0 "${got}" -
+
+# A jobs file that will not parse is loud, not silent: the run exits
+# non-zero and goes red rather than green with nothing reported.
+printf '%s' '{ "jobs": [' > "${WORK}/truncated.json"
+got=$(run reconcile '["debian:13"]' "${WORK}/truncated.json" https://example/run)
+check "an unparseable jobs file fails loudly" 2 "${got}" -
+
+# A jobs file that parses but is not the object the API returns is the
+# same kind of error.
+echo '[]' > "${WORK}/notobject.json"
+got=$(run reconcile '["debian:13"]' "${WORK}/notobject.json" https://example/run)
+check "a jobs file that is not an object fails loudly" 2 "${got}" -
+
+# A jobs file that is not there is an error before any gh call.
+got=$(run reconcile '[]' "${WORK}/nope.json" https://example/run)
+check "a missing jobs file is an error" 2 "${got}" -
+
+# reconcile wants exactly three arguments.
+got=$(run reconcile '[]' "${WORK}/jobs.json")
+check "reconcile wants three arguments" 2 "${got}" -
+
+# A gh failure for one image does not abandon the images after it, and
+# the run still exits non-zero so the failure is seen.
+cat > "${WORK}/two-failed.json" << 'EOF'
+{
+  "jobs": [
+    {"name": "Build first:img", "conclusion": "failure"},
+    {"name": "Build second:img", "conclusion": "failure"}
+  ]
+}
+EOF
+got=$(GH_FAIL_MATCH="first:img" \
+    run reconcile '["first:img","second:img"]' "${WORK}/two-failed.json" https://example/run)
+if [ "${got}" = 0 ]; then
+    echo "FAIL: a gh failure makes reconcile exit non-zero: got exit 0"
+    sed 's/^/    /' "${WORK}/out" 2>/dev/null || true
+    failed=$((failed + 1))
+else
+    echo "PASS: a gh failure makes reconcile exit non-zero"
+    passed=$((passed + 1))
+fi
+record_has "the image after a gh failure is still processed" \
+    "second:img is failing to build"
 
 echo
 echo "${passed} passed, ${failed} failed"

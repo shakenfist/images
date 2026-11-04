@@ -111,6 +111,12 @@ and the `.qcow2.log` named in [Where the logs are](#where-the-logs-are).
 This happens only on the real nightly: `master` with `publish` on. A
 dispatch from a branch, or with `publish` off, files nothing.
 
+The issue closes itself only for an image the nightly still builds. One
+dropped from `build.sh`'s default list, or dispatched by hand under a
+name the nightly never builds, keeps its issue open, because nothing
+reconciles an image the run was not asked for. Close it by hand, or run
+`tools/build-failure-issue.sh resolve <image> <run-url>`.
+
 It also reports an image whose build never finished, such as one whose
 runner vanished mid-build. The report compares the images the run was
 asked to build with the results GitHub recorded, instead of waiting for

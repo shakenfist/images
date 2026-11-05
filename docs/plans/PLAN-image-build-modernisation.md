@@ -904,6 +904,12 @@ so it is safe to run before merge.
 * **Widening `REPO_OVERRIDES['images']` beyond `eol-distro`.** This is
   shakenfist/development's decision 6.5 to revisit, external to this
   repository; nothing here can settle it.
+* **The executable hooks under `elements/`.** The shellcheck hook is
+  scoped to `tools/` and `build.sh` (D2); the DIB element hooks under
+  `elements/` are not linted. They are element data run inside the
+  build chroot with their own conventions, so bringing them under the
+  hook is a separate piece of work, left out deliberately rather than
+  missed.
 * The `AGENTS.md` "manually or via cron" item moved to Phase 2's
   cutover and is done.
 
@@ -994,6 +1000,13 @@ reviewed and committed it.
   succeeded, and `report-build-failures` skipped (branch, not master,
   and publish off). A glued argument would have failed the debian:13
   leg, so this is the behavioural proof the lint checks cannot give.
+* **A follow-up added the missing signal** (shakenfist/images#43).
+  `tools/test-build-dispatch.sh` stubs `build()` and drives the dispatch
+  table with every label, checking the shape of each call. The gap the
+  bullet above records -- that nothing exercised those call sites -- is
+  now closed for all 34 sites, not only the two `5b` built. It is
+  mutation-checked against the glued space, a copy-pasted output
+  directory, and a dropped agent argument.
 
 ### Phase 6. Push audit
 

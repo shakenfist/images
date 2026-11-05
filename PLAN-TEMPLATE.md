@@ -542,11 +542,12 @@ signal that would have caught it does not exist.
 
 The project-specific checks referred to above are:
 
-- [ ] `bash -n build.sh` parses, and `shellcheck build.sh` reports
-      no finding that was not already there. `.pre-commit-config.yaml`
-      shellchecks `tools/` only: `build.sh` stays excluded until its
-      outstanding findings are cleared, so this is still a manual
-      check. shellcheck is not installed on every host --
+- [ ] `bash -n build.sh` parses, and `shellcheck build.sh` reports no
+      findings. The pre-commit shellcheck hook now covers `tools/` and
+      `build.sh`, so `build.sh` must come back clean -- not merely with
+      no new findings -- and a stray finding fails `pre-commit`. The
+      executable hooks under `elements/` are outside the hook and are
+      not checked. shellcheck is not installed on every host --
       `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable
       build.sh` works anywhere Docker does.
 - [ ] `pre-commit run --all-files` and `tools/run-tests.sh` pass.

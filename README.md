@@ -8,10 +8,10 @@ built daily and published to `images.shakenfist.com`.
 
 ## Documentation
 
-- [The nightly build](https://github.com/shakenfist/images/blob/master/docs/nightly-build.md)
+- [The nightly build](https://github.com/shakenfist/images/blob/develop/docs/nightly-build.md)
   -- how the nightly build runs, how to rebuild an image by hand, and
   where its logs go.
-- [Plans](https://github.com/shakenfist/images/blob/master/docs/plans/index.md)
+- [Plans](https://github.com/shakenfist/images/blob/develop/docs/plans/index.md)
   -- work in progress on this repository.
 
 ## Elements
@@ -59,7 +59,7 @@ sudo ./build.sh --no-push "ubuntu:24.04"
 
 `sudo` drops exported variables, including the two that turn on log
 forwarding below; the
-[nightly build documentation](https://github.com/shakenfist/images/blob/master/docs/nightly-build.md#building-buildsh-directly)
+[nightly build documentation](https://github.com/shakenfist/images/blob/develop/docs/nightly-build.md#building-buildsh-directly)
 shows how to pass them through.
 
 ## Log Forwarding
@@ -75,7 +75,7 @@ that was never attempted.
 Neither variable has a default. With them unset nothing is shipped,
 and the run says so only in a warning when it starts, so a deployment
 that wants build logs has to set both -- the
-[nightly build documentation](https://github.com/shakenfist/images/blob/master/docs/nightly-build.md)
+[nightly build documentation](https://github.com/shakenfist/images/blob/develop/docs/nightly-build.md)
 describes where. The destination is deliberately not named here:
 this repository is public and the deployment that consumes it is
 not.

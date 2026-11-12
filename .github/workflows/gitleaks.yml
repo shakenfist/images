@@ -7,10 +7,10 @@ on:
   workflow_dispatch:
   pull_request:
     branches:
-      - master
+      - develop
   push:
     branches:
-      - master
+      - develop
 
 jobs:
   gitleaks:
@@ -39,7 +39,7 @@ jobs:
       # is not what anyone means by "scan this project's history": it
       # pulls in every other branch, and gitleaks 8.16 attributes what
       # it finds there to unrelated merge commits, so the findings
-      # cannot be triaged either. HEAD still reaches all of master, so
+      # cannot be triaged either. HEAD still reaches all of develop, so
       # nothing is given up.
       - name: Run gitleaks
         run: >-

@@ -901,6 +901,27 @@ so it is safe to run before merge.
   reference it, so a rename is its own deliberate change, not a rider
   on a lint cleanup. Tracked in open issue #19. The operator chose on
   2026-11-05 to keep it out of this phase.
+
+  **Taken up on 2026-11-13 as its own change.** Secret scanning and
+  push protection were enabled on 2026-10-21, so only the rename
+  remained. Phase 2 had already removed the largest obstacle: nothing
+  on sfyow checks this repository out any more, so the build host no
+  longer pulls `master` by name. What still names it is this
+  repository's workflows and docs (changed on the
+  `default-branch-develop` branch), the conductor's dispatch target in
+  shakenfist/private-ci (`conductor/reports.py`, `'ref': 'master'`),
+  and the `images-publish` environment's deployment branch policy,
+  which names `master` alone. The last two are outside the diff, and
+  each silently stops the nightly from publishing if it is missed: the
+  conductor would dispatch a branch that no longer exists, and a
+  `develop` run would be refused the environment. The cutover is one
+  sitting, well clear of the 01:30 nightly: rename the branch in
+  GitHub's settings (which retargets open pull requests and redirects
+  old links); add `develop` to the environment policy and remove
+  `master`; merge this repository's change; merge the private-ci
+  change and let the conductor deploy; then dispatch
+  `image-build.yml` on `develop` with `publish: false` and
+  `images: debian:13` to confirm the environment is granted.
 * **Widening `REPO_OVERRIDES['images']` beyond `eol-distro`.** This is
   shakenfist/development's decision 6.5 to revisit, external to this
   repository; nothing here can settle it.

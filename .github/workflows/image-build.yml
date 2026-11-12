@@ -5,7 +5,7 @@ name: Image build
 # file only decides where it runs, with what, and whether it
 # publishes.
 #
-# The conductor dispatches this nightly on master with publish on, and
+# The conductor dispatches this nightly on develop with publish on, and
 # that is what keeps the site fresh. A dispatch with publish off
 # builds and throws the result away, which is how a build.sh change
 # is tried on a branch before it merges.
@@ -36,7 +36,7 @@ on:
       publish:
         description: >-
           Publish to images.shakenfist.com and prune old images there.
-          Only honoured on master.
+          Only honoured on develop.
         type: boolean
         default: false
 
@@ -96,13 +96,13 @@ jobs:
     # Raise it with a new measurement if an image grows past it.
     timeout-minutes: 60
     # The publishing credential and the Loki settings are secrets in the
-    # images-publish environment, which only master may deploy from.
-    # On master the job always takes it, publishing or not, so that a
+    # images-publish environment, which only develop may deploy from.
+    # On develop the job always takes it, publishing or not, so that a
     # build that publishes nothing still ships its logs and summary to
     # Loki. Anywhere else it takes none, because asking for it would
     # fail the job rather than skip the secrets. An empty name means no
     # environment.
-    environment: ${{ github.ref == 'refs/heads/master' && 'images-publish' || '' }}
+    environment: ${{ github.ref == 'refs/heads/develop' && 'images-publish' || '' }}
     strategy:
       # One image failing says nothing about the others, so the rest
       # carry on. Four at a time keeps a full run from taking fourteen
@@ -117,7 +117,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # Publishing needs both master and the publish input. The ref
+      # Publishing needs both develop and the publish input. The ref
       # check is here as well as in the environment's branch policy so
       # that a dispatch from a branch shows this step as skipped, not
       # as a failed environment check. It writes the key and the
@@ -125,7 +125,7 @@ jobs:
       # the steps after it, so neither exists on a run that does not
       # publish. No set -x anywhere near it.
       - name: Set up the publishing credentials
-        if: github.ref == 'refs/heads/master' && inputs.publish
+        if: github.ref == 'refs/heads/develop' && inputs.publish
         env:
           IMAGES_PUBLISH_SSH_KEY: ${{ secrets.IMAGES_PUBLISH_SSH_KEY }}
           IMAGES_PUBLISH_KNOWN_HOSTS: ${{ secrets.IMAGES_PUBLISH_KNOWN_HOSTS }}
@@ -137,13 +137,13 @@ jobs:
       # one that silently does not. It also resets PATH, which is why
       # build.sh is run as ./build.sh from the checkout, the step's
       # working directory. The publishing pair is unset on a run that
-      # does not publish, and the Loki pair is empty off master; an
+      # does not publish, and the Loki pair is empty off develop; an
       # unset variable is simply not passed, and with no Loki URL
       # build.sh warns that it will ship nothing.
       - name: Build ${{ matrix.image }}
         env:
           IMAGE: ${{ matrix.image }}
-          PUBLISH: ${{ github.ref == 'refs/heads/master' && inputs.publish }}
+          PUBLISH: ${{ github.ref == 'refs/heads/develop' && inputs.publish }}
           SF_IMAGES_LOKI_URL: ${{ secrets.SF_IMAGES_LOKI_URL }}
           SF_IMAGES_LOKI_TENANT: ${{ secrets.SF_IMAGES_LOKI_TENANT }}
         run: |
@@ -156,7 +156,7 @@ jobs:
           fi
 
       - name: Remove the publishing credentials
-        if: always() && github.ref == 'refs/heads/master' && inputs.publish
+        if: always() && github.ref == 'refs/heads/develop' && inputs.publish
         run: tools/publish-credentials.sh cleanup
 
   report-build-failures:
@@ -170,11 +170,11 @@ jobs:
     # this job exists to catch, ends as failure not cancelled, so it is
     # still reported. (!cancelled() alone overrides the default that
     # needs succeeded, so no always() is needed.) The ref and publish
-    # gate matches publishing: only the real nightly on master files
+    # gate matches publishing: only the real nightly on develop files
     # issues, so a branch dispatch or a publish-off test run that fails
     # images on purpose neither opens production issues nor closes real
     # ones.
-    if: ${{ !cancelled() && github.ref == 'refs/heads/master' && inputs.publish }}
+    if: ${{ !cancelled() && github.ref == 'refs/heads/develop' && inputs.publish }}
     # Runs on a hosted runner, off the fleet's VMs: it runs no build code
     # and needs no fleet secret, only the automatic token, gh and
     # api.github.com. This repository is public, so the minutes are free.

@@ -265,8 +265,8 @@ variable exported before the value it depends on is assigned, and a
 Creating `PUSH-AUDIT.md` is itself a candidate phase for the plan
 that removes this paragraph.
 
-Note also that the default branch here is `master`, not `main`, so
-read every diff range against `origin/master`.
+Note also that the default branch here is `develop`, not `main`, so
+read every diff range against `origin/develop`.
 
 <!-- shared-block: plan-phase-landing v1 -->
 Phase landing (shared block; do not edit -- the canonical copy

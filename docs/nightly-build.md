@@ -8,7 +8,7 @@ rebuilding outside the nightly.
 ## How the nightly runs
 
 The conductor, a service on maui, dispatches
-`.github/workflows/image-build.yml` on `master` at about 01:30
+`.github/workflows/image-build.yml` on `develop` at about 01:30
 Canberra time, with its `publish` input on. The workflow runs one job
 per image, four at a time, each on a fresh
 `[self-hosted, vm, debian-13, m]` VM that runs `build.sh` for that
@@ -34,14 +34,14 @@ is stuck.
 In the repository's Actions tab, choose "Image build", then Run
 workflow:
 
-* Branch: `master`.
+* Branch: `develop`.
 * `images`: the images to build, separated by spaces, such as
   `debian:13` or `debian:13 rocky:9`. Empty builds the default list.
 * `publish`: on.
 
 That builds on a CI VM and publishes exactly as the nightly does,
 including pruning each label to its newest seven images. From any
-branch other than `master`, `publish` is ignored: the image is built,
+branch other than `develop`, `publish` is ignored: the image is built,
 checked and thrown away, and nothing is published.
 
 A second dispatch on the same ref waits for the first rather than
@@ -93,7 +93,7 @@ that run has built the image.
 
 Shipping happens only when both `SF_IMAGES_LOKI_URL` and
 `SF_IMAGES_LOKI_TENANT` are set. In the workflow they come from the
-`images-publish` environment's secrets, which only `master` receives,
+`images-publish` environment's secrets, which only `develop` receives,
 so a dispatch from a branch ships nothing and its run warns so when it
 starts. If `{job="image-build"}` goes quiet, check those first.
 
@@ -108,7 +108,7 @@ outage is one issue rather than one per night, and it closes itself
 when the image next builds. To find the cause, follow the Actions run
 and the `.qcow2.log` named in [Where the logs are](#where-the-logs-are).
 
-This happens only on the real nightly: `master` with `publish` on. A
+This happens only on the real nightly: `develop` with `publish` on. A
 dispatch from a branch, or with `publish` off, files nothing. A
 cancelled run also reports nothing at all: it does not file for a leg
 that failed before the cancel, nor close one that had already
@@ -134,7 +134,7 @@ stale" signal; they are kept apart because they fail in different ways.
 ## The publishing credential
 
 Publishing needs secrets that live in the `images-publish`
-environment, which only `master` may deploy from. A dispatch from a
+environment, which only `develop` may deploy from. A dispatch from a
 branch takes no environment and so no secret. The environment holds the
 SSH key, the pinned host key for the image server, the rsync target,
 and the two Loki settings.
@@ -165,7 +165,7 @@ one that boots and passes its checks yet breaks diskimage-builder.
 
 To recover, point the label back at the previous blob with
 `sf-client label update`, wait for new VMs to boot from it, and
-dispatch `debian:13` from `master` with `publish` on. The freshness
+dispatch `debian:13` from `develop` with `publish` on. The freshness
 watchdog reports the stall on the third day either way.
 
 ## Building build.sh directly

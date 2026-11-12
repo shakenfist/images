@@ -1,19 +1,15 @@
 # CodeQL analysis for shakenfist/images.
 #
 # A documented per-repository copy of shakenfist/development's
-# templates/codeql/codeql-analysis.yml, differing from it in two
-# places and otherwise kept in step with it:
-#
-# * The triggers name master. The template names main and develop,
-#   which this repository does not have, so a verbatim copy would only
-#   ever run on the weekly schedule.
-# * It analyses the actions language only, with no autobuild step.
-#   The code here is shell, which CodeQL does not analyse, and the
-#   GitHub Actions workflows -- which hold write-scoped tokens and file
-#   issues -- are what its queries do cover: untrusted input reaching
-#   a run: block, over-broad permissions. Naming the language rather
-#   than leaving it to autodetection says which one is meant, and
-#   nothing here compiles, so there is nothing for autobuild to do.
+# templates/codeql/codeql-analysis.yml, differing from it in one
+# place and otherwise kept in step with it: it analyses the actions
+# language only, with no autobuild step. The code here is shell, which
+# CodeQL does not analyse, and the GitHub Actions workflows -- which
+# hold write-scoped tokens and file issues -- are what its queries do
+# cover: untrusted input reaching a run: block, over-broad
+# permissions. Naming the language rather than leaving it to
+# autodetection says which one is meant, and nothing here compiles, so
+# there is nothing for autobuild to do.
 #
 # The template's own notes on the review-path filter, the fork guard
 # and cancellation follow, and apply here too. The one difference is
@@ -38,7 +34,7 @@ permissions: {}
 
 on:
   push:
-    branches: [master]
+    branches: [main, develop]
     # Keep in step with check_paths' filter below.
     paths-ignore:
       - 'REVIEWS.md'
@@ -47,7 +43,7 @@ on:
       - '.vscode/review-scope.toml'
       - 'docs/**'
   pull_request:
-    branches: [master]
+    branches: [main, develop]
   schedule:
     - cron: '0 17 * * 2'
 
